@@ -39,9 +39,13 @@ export default function ChatShell({ channel, messages, onSend, messageError, cla
   return (
     <section className="chat-shell">
       <div className="chat-shell__timeline">
-        {messageError ? <div className="chat-shell__notice">Message sync issue: {messageError}</div> : null}
+        {messageError ? (
+          <div className="chat-shell__notice" role="alert">
+            Message sync issue: {messageError}
+          </div>
+        ) : null}
         {claudeWorking ? (
-          <div className="chat-message chat-message--system">
+          <div className="chat-message chat-message--system" role="status" aria-live="polite" aria-atomic="true">
             <div className="chat-message__meta">
               <strong>System</strong>
               <span className="chat-message__working">Claude is working...</span>
@@ -49,7 +53,7 @@ export default function ChatShell({ channel, messages, onSend, messageError, cla
           </div>
         ) : null}
         {claudeFailure ? (
-          <div className="chat-message chat-message--system">
+          <div className="chat-message chat-message--system" role="alert" aria-atomic="true">
             <div className="chat-message__meta">
               <strong>System</strong>
               <span>Error</span>

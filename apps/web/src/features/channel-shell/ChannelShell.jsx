@@ -179,7 +179,6 @@ export default function ChannelShell() {
     setAgentError(null);
     setTriggerError(null);
     setMessagesError(null);
-    setRefreshTick(0);
     return undefined;
   }, [activeChannelId]);
 
@@ -288,7 +287,9 @@ export default function ChannelShell() {
   };
 
   const onSend = (text) => {
-    if (!activeChannelId) return;
+    if (!activeChannelId) {
+      return Promise.reject(new Error("No active channel selected"));
+    }
     return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" })
       .then(() => {
         setRefreshTick((tick) => tick + 1);
