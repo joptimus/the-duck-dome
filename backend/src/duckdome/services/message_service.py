@@ -8,9 +8,15 @@ from duckdome.stores.message_store import MessageStore
 
 
 class MessageService:
-    def __init__(self, store: MessageStore, known_agents: list[str]) -> None:
+    def __init__(
+        self,
+        store: MessageStore,
+        known_agents: list[str],
+        channel_service: object | None = None,
+    ) -> None:
         self._store = store
         self._known_agents = [a.lower() for a in known_agents]
+        self._channel_service = channel_service
         self._build_mention_regex()
 
     def _build_mention_regex(self) -> None:
@@ -38,8 +44,20 @@ class MessageService:
                 result.append(name)
         return result
 
+    def _filter_mentions_by_channel(
+        self, mentions: list[str], channel_id: str
+    ) -> list[str]:
+        if self._channel_service is None:
+            return mentions
+        channel_agents = set(self._channel_service.get_agent_types(channel_id))
+        return [m for m in mentions if m in channel_agents]
+
     def send(self, text: str, channel: str, sender: str) -> Message:
+        if self._channel_service and not self._channel_service.validate_channel(channel):
+            raise ValueError(f"Invalid channel: {channel}")
+
         mentions = self._parse_mentions(text)
+        mentions = self._filter_mentions_by_channel(mentions, channel)
 
         delivery = None
         deliveries: list[Delivery] = []

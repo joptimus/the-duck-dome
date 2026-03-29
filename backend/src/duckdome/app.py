@@ -8,7 +8,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from duckdome.routes.health import router as health_router
 from duckdome.routes import messages as messages_mod
 from duckdome.routes import deliveries as deliveries_mod
+from duckdome.routes import channels as channels_mod
+from duckdome.services.channel_service import ChannelService
 from duckdome.services.message_service import MessageService
+from duckdome.stores.channel_store import ChannelStore
 from duckdome.stores.message_store import MessageStore
 
 DEV_ORIGINS = [
@@ -31,18 +34,26 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     )
 
     # Stores
-    store = MessageStore(data_dir=data_dir)
+    message_store = MessageStore(data_dir=data_dir)
+    channel_store = ChannelStore(data_dir=data_dir)
 
     # Services
-    message_service = MessageService(store=store, known_agents=DEFAULT_AGENTS)
+    channel_service = ChannelService(store=channel_store)
+    message_service = MessageService(
+        store=message_store,
+        known_agents=DEFAULT_AGENTS,
+        channel_service=channel_service,
+    )
 
     # Init routes with dependencies
     messages_mod.init(message_service)
     deliveries_mod.init(message_service)
+    channels_mod.init(channel_service)
 
     # Register routers
     app.include_router(health_router)
     app.include_router(messages_mod.router)
     app.include_router(deliveries_mod.router)
+    app.include_router(channels_mod.router)
 
     return app

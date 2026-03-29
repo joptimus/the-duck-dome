@@ -9,12 +9,22 @@ def client(tmp_path):
     return TestClient(app)
 
 
+@pytest.fixture
+def channel_id(client):
+    """Create a general channel with claude agent and return its ID."""
+    r = client.post("/api/channels", json={"name": "general", "type": "general"})
+    ch_id = r.json()["id"]
+    client.post(f"/api/channels/{ch_id}/agents", json={"agent_type": "claude"})
+    client.post(f"/api/channels/{ch_id}/agents", json={"agent_type": "codex"})
+    return ch_id
+
+
 # --- POST /api/messages ---
 
-def test_send_message(client):
+def test_send_message(client, channel_id):
     resp = client.post("/api/messages", json={
         "text": "hello world",
-        "channel": "general",
+        "channel": channel_id,
         "sender": "human",
     })
     assert resp.status_code == 201
@@ -24,10 +34,10 @@ def test_send_message(client):
     assert data["delivery"] is None
 
 
-def test_send_message_with_mention(client):
+def test_send_message_with_mention(client, channel_id):
     resp = client.post("/api/messages", json={
         "text": "@claude review this",
-        "channel": "general",
+        "channel": channel_id,
         "sender": "human",
     })
     assert resp.status_code == 201
@@ -42,30 +52,37 @@ def test_send_message_validation(client):
     assert resp.status_code == 422
 
 
+def test_send_message_invalid_channel(client):
+    resp = client.post("/api/messages", json={
+        "text": "hello", "channel": "nonexistent", "sender": "human"
+    })
+    assert resp.status_code == 422
+
+
 # --- GET /api/messages ---
 
-def test_list_messages(client):
+def test_list_messages(client, channel_id):
     client.post("/api/messages", json={
-        "text": "one", "channel": "general", "sender": "human"
+        "text": "one", "channel": channel_id, "sender": "human"
     })
     client.post("/api/messages", json={
-        "text": "two", "channel": "general", "sender": "human"
+        "text": "two", "channel": channel_id, "sender": "human"
     })
-    resp = client.get("/api/messages", params={"channel": "general"})
+    resp = client.get("/api/messages", params={"channel": channel_id})
     assert resp.status_code == 200
     assert len(resp.json()) == 2
 
 
-def test_list_messages_with_after(client):
+def test_list_messages_with_after(client, channel_id):
     r1 = client.post("/api/messages", json={
-        "text": "one", "channel": "general", "sender": "human"
+        "text": "one", "channel": channel_id, "sender": "human"
     })
     client.post("/api/messages", json={
-        "text": "two", "channel": "general", "sender": "human"
+        "text": "two", "channel": channel_id, "sender": "human"
     })
     msg1_id = r1.json()["id"]
     resp = client.get("/api/messages", params={
-        "channel": "general", "after": msg1_id
+        "channel": channel_id, "after": msg1_id
     })
     assert resp.status_code == 200
     assert len(resp.json()) == 1
@@ -73,9 +90,9 @@ def test_list_messages_with_after(client):
 
 # --- POST /api/messages/{id}/seen ---
 
-def test_mark_seen(client):
+def test_mark_seen(client, channel_id):
     r = client.post("/api/messages", json={
-        "text": "@claude test", "channel": "general", "sender": "human"
+        "text": "@claude test", "channel": channel_id, "sender": "human"
     })
     msg_id = r.json()["id"]
     resp = client.post(f"/api/messages/{msg_id}/seen", json={
@@ -85,22 +102,22 @@ def test_mark_seen(client):
     assert resp.json()["delivery"]["state"] == "seen"
 
 
-def test_mark_seen_wrong_agent(client):
+def test_mark_seen_wrong_agent(client, channel_id):
     r = client.post("/api/messages", json={
-        "text": "@claude test", "channel": "general", "sender": "human"
+        "text": "@claude test", "channel": channel_id, "sender": "human"
     })
     msg_id = r.json()["id"]
     resp = client.post(f"/api/messages/{msg_id}/seen", json={
-        "agent_name": "codex"
+        "agent_name": "gemini"
     })
     assert resp.status_code == 404
 
 
 # --- POST /api/messages/{id}/responded ---
 
-def test_mark_responded(client):
+def test_mark_responded(client, channel_id):
     r = client.post("/api/messages", json={
-        "text": "@claude test", "channel": "general", "sender": "human"
+        "text": "@claude test", "channel": channel_id, "sender": "human"
     })
     msg_id = r.json()["id"]
     client.post(f"/api/messages/{msg_id}/seen", json={"agent_name": "claude"})
@@ -115,16 +132,16 @@ def test_mark_responded(client):
 
 # --- POST /api/messages/agent-read ---
 
-def test_agent_read_marks_seen(client):
+def test_agent_read_marks_seen(client, channel_id):
     r1 = client.post("/api/messages", json={
-        "text": "@claude first", "channel": "general", "sender": "human"
+        "text": "@claude first", "channel": channel_id, "sender": "human"
     })
     r2 = client.post("/api/messages", json={
-        "text": "@claude second", "channel": "general", "sender": "human"
+        "text": "@claude second", "channel": channel_id, "sender": "human"
     })
     resp = client.post("/api/messages/agent-read", json={
         "agent_name": "claude",
-        "channel": "general",
+        "channel": channel_id,
         "read_up_to_id": r2.json()["id"],
     })
     assert resp.status_code == 200
@@ -133,16 +150,16 @@ def test_agent_read_marks_seen(client):
 
 # --- POST /api/messages/agent-response ---
 
-def test_agent_response_marks_responded(client):
+def test_agent_response_marks_responded(client, channel_id):
     r = client.post("/api/messages", json={
-        "text": "@claude review", "channel": "general", "sender": "human"
+        "text": "@claude review", "channel": channel_id, "sender": "human"
     })
     msg_id = r.json()["id"]
     client.post(f"/api/messages/{msg_id}/seen", json={"agent_name": "claude"})
 
     resp = client.post("/api/messages/agent-response", json={
         "agent_name": "claude",
-        "channel": "general",
+        "channel": channel_id,
         "response_id": "resp-1",
     })
     assert resp.status_code == 200
@@ -151,12 +168,12 @@ def test_agent_response_marks_responded(client):
 
 # --- GET /api/deliveries ---
 
-def test_list_deliveries_by_state(client):
+def test_list_deliveries_by_state(client, channel_id):
     client.post("/api/messages", json={
-        "text": "@claude one", "channel": "general", "sender": "human"
+        "text": "@claude one", "channel": channel_id, "sender": "human"
     })
     client.post("/api/messages", json={
-        "text": "no mention", "channel": "general", "sender": "human"
+        "text": "no mention", "channel": channel_id, "sender": "human"
     })
     resp = client.get("/api/deliveries", params={"state": "sent"})
     assert resp.status_code == 200
@@ -165,14 +182,14 @@ def test_list_deliveries_by_state(client):
     assert data[0]["delivery"]["state"] == "sent"
 
 
-def test_list_deliveries_open(client):
+def test_list_deliveries_open(client, channel_id):
     """state=open returns sent + seen messages."""
     r = client.post("/api/messages", json={
-        "text": "@claude one", "channel": "general", "sender": "human"
+        "text": "@claude one", "channel": channel_id, "sender": "human"
     })
     msg_id = r.json()["id"]
     client.post("/api/messages", json={
-        "text": "@codex two", "channel": "general", "sender": "human"
+        "text": "@codex two", "channel": channel_id, "sender": "human"
     })
     # Mark one as seen
     client.post(f"/api/messages/{msg_id}/seen", json={"agent_name": "claude"})
