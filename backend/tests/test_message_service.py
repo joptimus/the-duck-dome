@@ -55,70 +55,97 @@ def test_mention_word_boundary(service):
 
 # --- State Transitions ---
 
-def test_mark_delivered(service, store):
+def test_mark_seen(service, store):
     msg = service.send(text="@claude test", channel="general", sender="human")
-    updated = service.mark_delivered(msg.id, agent_name="claude")
-    assert updated.delivery.state == DeliveryState.DELIVERED
-    assert updated.delivery.delivered_at is not None
+    updated = service.mark_seen(msg.id, agent_name="claude")
+    assert updated.delivery.state == DeliveryState.SEEN
+    assert updated.delivery.seen_at is not None
     # Persisted
     persisted = store.get(msg.id)
-    assert persisted.delivery.state == DeliveryState.DELIVERED
+    assert persisted.delivery.state == DeliveryState.SEEN
 
 
-def test_mark_delivered_multi_target(service):
+def test_mark_seen_multi_target(service):
     msg = service.send(text="@claude @codex test", channel="general", sender="human")
-    updated = service.mark_delivered(msg.id, agent_name="claude")
+    updated = service.mark_seen(msg.id, agent_name="claude")
     claude_d = next(d for d in updated.deliveries if d.target == "claude")
     codex_d = next(d for d in updated.deliveries if d.target == "codex")
-    assert claude_d.state == DeliveryState.DELIVERED
+    assert claude_d.state == DeliveryState.SEEN
     assert codex_d.state == DeliveryState.SENT
 
 
-def test_mark_acknowledged(service):
+def test_mark_responded(service):
     msg = service.send(text="@claude test", channel="general", sender="human")
-    service.mark_delivered(msg.id, agent_name="claude")
-    updated = service.mark_acknowledged(msg.id, agent_name="claude", response_id="resp-1")
-    assert updated.delivery.state == DeliveryState.ACKNOWLEDGED
-    assert updated.delivery.acknowledged_at is not None
+    service.mark_seen(msg.id, agent_name="claude")
+    updated = service.mark_responded(msg.id, agent_name="claude", response_id="resp-1")
+    assert updated.delivery.state == DeliveryState.RESPONDED
+    assert updated.delivery.responded_at is not None
     assert updated.delivery.response_id == "resp-1"
 
 
-def test_mark_delivered_wrong_agent_is_noop(service):
+def test_mark_seen_wrong_agent_is_noop(service):
     msg = service.send(text="@claude test", channel="general", sender="human")
-    updated = service.mark_delivered(msg.id, agent_name="codex")
+    updated = service.mark_seen(msg.id, agent_name="codex")
     assert updated is None
 
 
-def test_cannot_acknowledge_before_delivered(service):
+def test_cannot_respond_before_seen(service):
     msg = service.send(text="@claude test", channel="general", sender="human")
-    result = service.mark_acknowledged(msg.id, agent_name="claude", response_id="r1")
+    result = service.mark_responded(msg.id, agent_name="claude", response_id="r1")
     assert result is None
 
 
-# --- Agent Read (cursor-based delivery detection) ---
+# --- Agent Read (cursor-based seen detection) ---
 
-def test_process_agent_read_marks_delivered(service):
+def test_process_agent_read_marks_seen(service):
     m1 = service.send(text="@claude first", channel="general", sender="human")
     m2 = service.send(text="@claude second", channel="general", sender="human")
     service.send(text="no mention", channel="general", sender="human")
 
-    delivered = service.process_agent_read(
+    result = service.process_agent_read(
         agent_name="claude", channel="general", read_up_to_id=m2.id
     )
-    assert len(delivered) == 2
-    for msg in delivered:
-        assert msg.delivery.state == DeliveryState.DELIVERED
+    assert len(result) == 2
+    for msg in result:
+        assert msg.delivery.state == DeliveryState.SEEN
 
 
-# --- Agent Response (acknowledgment detection) ---
+# --- Agent Response ---
 
-def test_process_agent_response_marks_acknowledged(service):
+def test_process_agent_response_marks_responded(service):
     m1 = service.send(text="@claude review", channel="general", sender="human")
-    service.mark_delivered(m1.id, agent_name="claude")
+    service.mark_seen(m1.id, agent_name="claude")
 
-    ack_msgs = service.process_agent_response(
+    result = service.process_agent_response(
         agent_name="claude", channel="general", response_id="resp-1"
     )
-    assert len(ack_msgs) == 1
-    assert ack_msgs[0].delivery.state == DeliveryState.ACKNOWLEDGED
-    assert ack_msgs[0].delivery.response_id == "resp-1"
+    assert len(result) == 1
+    assert result[0].delivery.state == DeliveryState.RESPONDED
+    assert result[0].delivery.response_id == "resp-1"
+
+
+# --- Response after timeout ---
+
+def test_respond_after_timeout(service, store):
+    msg = service.send(text="@claude test", channel="general", sender="human")
+    service.mark_seen(msg.id, agent_name="claude")
+    # Simulate timeout (directly set state)
+    persisted = store.get(msg.id)
+    persisted.delivery.state = DeliveryState.TIMEOUT
+    store.update(msg.id, persisted)
+
+    updated = service.mark_responded(msg.id, agent_name="claude", response_id="late-resp")
+    assert updated is not None
+    assert updated.delivery.state == DeliveryState.RESPONDED
+    assert updated.delivery.response_id == "late-resp"
+
+
+# --- Idempotency ---
+
+def test_duplicate_send_is_idempotent(store):
+    from duckdome.models.message import Message
+    msg = Message(text="hello", channel="general", sender="human")
+    store.add(msg)
+    store.add(msg)  # duplicate
+    msgs = store.list_by_channel("general")
+    assert len(msgs) == 1

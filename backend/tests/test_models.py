@@ -20,8 +20,8 @@ def test_message_with_single_delivery():
     assert msg.delivery.target == "claude"
     assert msg.delivery.state == DeliveryState.SENT
     assert msg.delivery.sent_at is not None
-    assert msg.delivery.delivered_at is None
-    assert msg.delivery.acknowledged_at is None
+    assert msg.delivery.seen_at is None
+    assert msg.delivery.responded_at is None
     assert msg.delivery.response_id is None
 
 
@@ -44,14 +44,14 @@ def test_delivery_state_transitions():
     d = Delivery(target="claude")
     assert d.state == DeliveryState.SENT
 
-    d.state = DeliveryState.DELIVERED
-    d.delivered_at = time.time()
-    assert d.state == DeliveryState.DELIVERED
+    d.state = DeliveryState.SEEN
+    d.seen_at = time.time()
+    assert d.state == DeliveryState.SEEN
 
-    d.state = DeliveryState.ACKNOWLEDGED
-    d.acknowledged_at = time.time()
+    d.state = DeliveryState.RESPONDED
+    d.responded_at = time.time()
     d.response_id = "resp-123"
-    assert d.state == DeliveryState.ACKNOWLEDGED
+    assert d.state == DeliveryState.RESPONDED
 
 
 def test_message_serialization_roundtrip():

@@ -70,7 +70,7 @@ class MessageService:
                 return d
         return None
 
-    def mark_delivered(self, msg_id: str, agent_name: str) -> Message | None:
+    def mark_seen(self, msg_id: str, agent_name: str) -> Message | None:
         msg = self._store.get(msg_id)
         if msg is None:
             return None
@@ -79,11 +79,11 @@ class MessageService:
             return None
         if delivery.state != DeliveryState.SENT:
             return msg
-        delivery.state = DeliveryState.DELIVERED
-        delivery.delivered_at = time.time()
+        delivery.state = DeliveryState.SEEN
+        delivery.seen_at = time.time()
         return self._store.update(msg_id, msg)
 
-    def mark_acknowledged(
+    def mark_responded(
         self, msg_id: str, agent_name: str, response_id: str
     ) -> Message | None:
         msg = self._store.get(msg_id)
@@ -92,44 +92,44 @@ class MessageService:
         delivery = self._get_delivery_for_agent(msg, agent_name)
         if delivery is None:
             return None
-        if delivery.state != DeliveryState.DELIVERED:
+        if delivery.state not in (DeliveryState.SEEN, DeliveryState.TIMEOUT):
             return None
-        delivery.state = DeliveryState.ACKNOWLEDGED
-        delivery.acknowledged_at = time.time()
+        delivery.state = DeliveryState.RESPONDED
+        delivery.responded_at = time.time()
         delivery.response_id = response_id
         return self._store.update(msg_id, msg)
 
     def process_agent_read(
         self, agent_name: str, channel: str, read_up_to_id: str
     ) -> list[Message]:
-        """Mark all sent messages targeted at agent as delivered, up to read_up_to_id."""
+        """Mark all sent messages targeted at agent as seen, up to read_up_to_id."""
         msgs = self._store.list_by_channel(channel)
         if not any(m.id == read_up_to_id for m in msgs):
             return []
-        delivered: list[Message] = []
+        result: list[Message] = []
         for msg in msgs:
             d = self._get_delivery_for_agent(msg, agent_name)
             if d and d.state == DeliveryState.SENT:
-                updated = self.mark_delivered(msg.id, agent_name)
+                updated = self.mark_seen(msg.id, agent_name)
                 if updated:
-                    delivered.append(updated)
+                    result.append(updated)
             if msg.id == read_up_to_id:
                 break
-        return delivered
+        return result
 
     def process_agent_response(
         self, agent_name: str, channel: str, response_id: str
     ) -> list[Message]:
-        """Mark all delivered messages targeted at agent as acknowledged."""
+        """Mark all seen/timed-out messages targeted at agent as responded."""
         msgs = self._store.list_by_channel(channel)
-        acknowledged: list[Message] = []
+        result: list[Message] = []
         for msg in msgs:
             d = self._get_delivery_for_agent(msg, agent_name)
-            if d and d.state == DeliveryState.DELIVERED:
-                updated = self.mark_acknowledged(msg.id, agent_name, response_id)
+            if d and d.state in (DeliveryState.SEEN, DeliveryState.TIMEOUT):
+                updated = self.mark_responded(msg.id, agent_name, response_id)
                 if updated:
-                    acknowledged.append(updated)
-        return acknowledged
+                    result.append(updated)
+        return result
 
     def list_messages(
         self, channel: str, after_id: str | None = None
@@ -141,11 +141,11 @@ class MessageService:
 
     def list_open_deliveries(self) -> list[Message]:
         sent = self._store.list_by_delivery_state("sent")
-        delivered = self._store.list_by_delivery_state("delivered")
-        seen: set[str] = set()
+        seen = self._store.list_by_delivery_state("seen")
+        seen_ids: set[str] = set()
         result: list[Message] = []
-        for msg in sent + delivered:
-            if msg.id not in seen:
-                seen.add(msg.id)
+        for msg in sent + seen:
+            if msg.id not in seen_ids:
+                seen_ids.add(msg.id)
                 result.append(msg)
         return result

@@ -47,6 +47,8 @@ class MessageStore:
         tmp.rename(self._file)
 
     def add(self, msg: Message) -> Message:
+        if msg.id in self._messages:
+            return self._messages[msg.id]
         self._messages[msg.id] = msg
         self._order.append(msg.id)
         self._append(msg)

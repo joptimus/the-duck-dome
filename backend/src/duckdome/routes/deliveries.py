@@ -19,7 +19,7 @@ def _get_service() -> MessageService:
     return _service
 
 
-VALID_STATES = {"open", "sent", "delivered", "acknowledged", "resolved", "timeout"}
+VALID_STATES = {"open", "sent", "seen", "responded", "resolved", "timeout"}
 
 
 @router.get("")

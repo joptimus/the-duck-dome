@@ -27,11 +27,11 @@ class SendMessageRequest(BaseModel):
     sender: str = Field(min_length=1)
 
 
-class AgentDeliveredRequest(BaseModel):
+class AgentSeenRequest(BaseModel):
     agent_name: str = Field(min_length=1)
 
 
-class AgentAcknowledgedRequest(BaseModel):
+class AgentRespondedRequest(BaseModel):
     agent_name: str = Field(min_length=1)
     response_id: str = Field(min_length=1)
 
@@ -66,38 +66,38 @@ def list_messages(channel: str, after: str | None = None):
 @router.post("/agent-read")
 def agent_read(body: AgentReadRequest):
     svc = _get_service()
-    delivered = svc.process_agent_read(
+    result = svc.process_agent_read(
         agent_name=body.agent_name,
         channel=body.channel,
         read_up_to_id=body.read_up_to_id,
     )
-    return [m.model_dump() for m in delivered]
+    return [m.model_dump() for m in result]
 
 
 @router.post("/agent-response")
 def agent_response(body: AgentResponseRequest):
     svc = _get_service()
-    acknowledged = svc.process_agent_response(
+    result = svc.process_agent_response(
         agent_name=body.agent_name,
         channel=body.channel,
         response_id=body.response_id,
     )
-    return [m.model_dump() for m in acknowledged]
+    return [m.model_dump() for m in result]
 
 
-@router.post("/{msg_id}/delivered")
-def mark_delivered(msg_id: str, body: AgentDeliveredRequest):
+@router.post("/{msg_id}/seen")
+def mark_seen(msg_id: str, body: AgentSeenRequest):
     svc = _get_service()
-    result = svc.mark_delivered(msg_id, agent_name=body.agent_name)
+    result = svc.mark_seen(msg_id, agent_name=body.agent_name)
     if result is None:
         raise HTTPException(status_code=404, detail="Message not found or agent not targeted")
     return result.model_dump()
 
 
-@router.post("/{msg_id}/acknowledged")
-def mark_acknowledged(msg_id: str, body: AgentAcknowledgedRequest):
+@router.post("/{msg_id}/responded")
+def mark_responded(msg_id: str, body: AgentRespondedRequest):
     svc = _get_service()
-    result = svc.mark_acknowledged(msg_id, agent_name=body.agent_name, response_id=body.response_id)
+    result = svc.mark_responded(msg_id, agent_name=body.agent_name, response_id=body.response_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="Message not found or not in delivered state")
+        raise HTTPException(status_code=404, detail="Message not found or not in seen/timeout state")
     return result.model_dump()

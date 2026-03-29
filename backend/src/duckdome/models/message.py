@@ -9,8 +9,8 @@ from pydantic import BaseModel, Field, model_validator
 
 class DeliveryState(StrEnum):
     SENT = "sent"
-    DELIVERED = "delivered"
-    ACKNOWLEDGED = "acknowledged"
+    SEEN = "seen"
+    RESPONDED = "responded"
     RESOLVED = "resolved"
     TIMEOUT = "timeout"
 
@@ -19,8 +19,8 @@ class Delivery(BaseModel):
     target: str
     state: DeliveryState = DeliveryState.SENT
     sent_at: float = Field(default_factory=time.time)
-    delivered_at: float | None = None
-    acknowledged_at: float | None = None
+    seen_at: float | None = None
+    responded_at: float | None = None
     response_id: str | None = None
 
 
