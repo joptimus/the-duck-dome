@@ -7,6 +7,11 @@ from enum import StrEnum
 from pydantic import BaseModel, Field, model_validator
 
 
+class MessageType(StrEnum):
+    CHAT = "chat"
+    SYSTEM = "system"
+
+
 class DeliveryState(StrEnum):
     SENT = "sent"
     SEEN = "seen"

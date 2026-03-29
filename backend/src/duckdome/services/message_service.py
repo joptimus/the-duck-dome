@@ -11,6 +11,73 @@ if TYPE_CHECKING:
     from duckdome.ws.manager import ConnectionManager
 
 
+class LoopGuard:
+    """Prevents infinite agent-to-agent @mention loops.
+
+    This feature replaces the loop guard in the legacy router
+    (agentchattr/apps/server/src/router.py).
+
+    Differences from legacy behavior:
+    - Standalone class instead of being embedded in the Router.
+    - No guard_emitted flag; the system message is posted once on trigger
+      and the paused state prevents further agent messages silently.
+    - Simplified: no continue_routing method; human messages reset the guard.
+    """
+
+    def __init__(self, max_hops: int = 4) -> None:
+        self._hops: dict[str, int] = {}  # channel_id -> hop count
+        self._paused: dict[str, bool] = {}  # channel_id -> paused
+        self._just_triggered: str | None = None
+        self.max_hops = max_hops
+
+    def check(self, channel_id: str, sender: str, known_agents: list[str]) -> bool:
+        """Returns True if routing should proceed, False if guard triggered.
+
+        Call this for every message. Human messages reset the guard.
+        Agent messages increment the hop count and may trigger the guard.
+
+        When False is returned, call ``just_triggered()`` to distinguish
+        the first trigger (needs a system message) from subsequent blocked
+        messages (silent).
+        """
+        self._just_triggered = None
+
+        if sender.lower() not in [a.lower() for a in known_agents]:
+            # Human message resets the guard
+            self.reset(channel_id)
+            return True
+
+        # Already paused — silently block
+        if self._paused.get(channel_id, False):
+            return False
+
+        # Agent message: increment hop count
+        count = self._hops.get(channel_id, 0) + 1
+        self._hops[channel_id] = count
+
+        if count > self.max_hops:
+            self._paused[channel_id] = True
+            self._just_triggered = channel_id
+            return False
+
+        return True
+
+    def just_triggered(self, channel_id: str) -> bool:
+        """True only on the call that first triggered the guard."""
+        return self._just_triggered == channel_id
+
+    def reset(self, channel_id: str) -> None:
+        """Human message resets the guard."""
+        self._hops.pop(channel_id, None)
+        self._paused.pop(channel_id, None)
+
+    def is_paused(self, channel_id: str) -> bool:
+        return self._paused.get(channel_id, False)
+
+    def hop_count(self, channel_id: str) -> int:
+        return self._hops.get(channel_id, 0)
+
+
 class MessageService:
     def __init__(
         self,
@@ -18,11 +85,13 @@ class MessageService:
         known_agents: list[str],
         channel_service: object | None = None,
         ws_manager: ConnectionManager | None = None,
+        max_hops: int = 4,
     ) -> None:
         self._store = store
         self._known_agents = [a.lower() for a in known_agents]
         self._channel_service = channel_service
         self._ws_manager = ws_manager
+        self._loop_guard = LoopGuard(max_hops=max_hops)
         self._build_mention_regex()
 
     def _broadcast(self, event: dict) -> None:
@@ -74,6 +143,46 @@ class MessageService:
         if self._channel_service and not self._channel_service.validate_channel(channel):
             raise ValueError(f"Invalid channel: {channel}")
 
+        # --- Loop guard check ---
+        should_route = self._loop_guard.check(
+            channel_id=channel,
+            sender=sender,
+            known_agents=self._known_agents,
+        )
+
+        if not should_route:
+            if self._loop_guard.just_triggered(channel):
+                # Guard just triggered — post system message before
+                # storing the agent's original message without deliveries.
+                hop_count = self._loop_guard.hop_count(channel)
+                guard_text = (
+                    f"Loop guard activated \u2014 {hop_count} consecutive "
+                    f"agent-to-agent hops in this channel. "
+                    f"Human message required to resume."
+                )
+                guard_msg = Message(
+                    text=guard_text,
+                    channel=channel,
+                    sender="system",
+                    type=MessageType.SYSTEM,
+                )
+                self._store.add(guard_msg)
+                self._broadcast(
+                    {"type": "new_message", "message": guard_msg.model_dump()}
+                )
+
+            # Store the agent message but skip delivery/trigger creation
+            msg = Message(
+                text=text,
+                channel=channel,
+                sender=sender,
+                type=type or MessageType.CHAT,
+            )
+            self._store.add(msg)
+            self._broadcast({"type": "new_message", "message": msg.model_dump()})
+            return msg
+
+        # --- Normal routing ---
         mentions = self._parse_mentions(text)
         mentions = self._filter_mentions_by_channel(mentions, channel)
 
