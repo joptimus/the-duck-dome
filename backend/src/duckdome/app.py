@@ -11,13 +11,16 @@ from duckdome.routes import deliveries as deliveries_mod
 from duckdome.routes import channels as channels_mod
 from duckdome.routes import triggers as triggers_mod
 from duckdome.routes import runners as runners_mod
+from duckdome.routes import tool_approvals as tool_approvals_mod
 from duckdome.routes import websocket as websocket_mod
 from duckdome.services.channel_service import ChannelService
 from duckdome.services.message_service import MessageService
 from duckdome.services.trigger_service import TriggerService
 from duckdome.services.runner_service import RunnerService
+from duckdome.services.tool_approval_service import ToolApprovalService
 from duckdome.stores.channel_store import ChannelStore
 from duckdome.stores.message_store import MessageStore
+from duckdome.stores.tool_approval_store import ToolApprovalStore
 from duckdome.stores.trigger_store import TriggerStore
 from duckdome.ws import ConnectionManager
 
@@ -44,6 +47,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     message_store = MessageStore(data_dir=data_dir)
     channel_store = ChannelStore(data_dir=data_dir)
     trigger_store = TriggerStore(data_dir=data_dir)
+    tool_approval_store = ToolApprovalStore(data_dir=data_dir)
 
     # WebSocket manager
     ws_manager = ConnectionManager()
@@ -61,6 +65,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         channel_store=channel_store,
         ws_manager=ws_manager,
     )
+    tool_approval_service = ToolApprovalService(
+        store=tool_approval_store,
+        ws_manager=ws_manager,
+    )
 
     runner_service = RunnerService(
         trigger_service=trigger_service,
@@ -75,6 +83,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     channels_mod.init(channel_service)
     triggers_mod.init(trigger_service)
     runners_mod.init(runner_service)
+    tool_approvals_mod.init(tool_approval_service)
     websocket_mod.init(ws_manager)
 
     # Register routers
@@ -84,6 +93,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     app.include_router(channels_mod.router)
     app.include_router(triggers_mod.router)
     app.include_router(runners_mod.router)
+    app.include_router(tool_approvals_mod.router)
     app.include_router(websocket_mod.router)
 
     return app

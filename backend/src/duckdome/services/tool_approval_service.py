@@ -1,0 +1,93 @@
+from __future__ import annotations
+
+import time
+from typing import TYPE_CHECKING
+
+from duckdome.models.tool_approval import ToolApproval, ToolApprovalStatus
+from duckdome.stores.tool_approval_store import ToolApprovalStore
+from duckdome.ws.events import TOOL_APPROVAL_UPDATED
+
+if TYPE_CHECKING:
+    from duckdome.ws.manager import ConnectionManager
+
+
+class ToolApprovalService:
+    def __init__(
+        self,
+        store: ToolApprovalStore,
+        ws_manager: ConnectionManager | None = None,
+    ) -> None:
+        self._store = store
+        self._ws_manager = ws_manager
+
+    def _broadcast(self, approval: ToolApproval) -> None:
+        if self._ws_manager is None:
+            return
+        self._ws_manager.broadcast_sync(
+            {
+                "type": TOOL_APPROVAL_UPDATED,
+                "approval": approval.model_dump(mode="json"),
+            }
+        )
+
+    def request(
+        self,
+        *,
+        agent: str,
+        tool: str,
+        arguments: dict | None,
+        channel: str,
+    ) -> dict:
+        policy = self._store.get_policy(agent, tool)
+        if policy == "allow":
+            return {"status": "approved", "source": "policy"}
+        if policy == "deny":
+            return {"status": "denied", "source": "policy"}
+
+        approval = ToolApproval(
+            agent=agent,
+            tool=tool,
+            arguments=arguments or {},
+            channel=channel,
+        )
+        self._store.add(approval)
+        self._broadcast(approval)
+        return {"status": "pending", "approval": approval}
+
+    def list_pending(self, channel: str | None = None) -> list[ToolApproval]:
+        return self._store.list_pending(channel=channel)
+
+    def approve(
+        self, approval_id: str, resolved_by: str, remember: bool = False
+    ) -> ToolApproval | None:
+        approval = self._store.get(approval_id)
+        if approval is None or approval.status != ToolApprovalStatus.PENDING:
+            return None
+        approval.status = ToolApprovalStatus.APPROVED
+        approval.resolution = "approved"
+        approval.resolved_by = resolved_by
+        approval.resolved_at = time.time()
+        self._store.update(approval_id, approval)
+        if remember:
+            self.set_policy(agent=approval.agent, tool=approval.tool, decision="allow")
+        self._broadcast(approval)
+        return approval
+
+    def deny(
+        self, approval_id: str, resolved_by: str, remember: bool = False
+    ) -> ToolApproval | None:
+        approval = self._store.get(approval_id)
+        if approval is None or approval.status != ToolApprovalStatus.PENDING:
+            return None
+        approval.status = ToolApprovalStatus.DENIED
+        approval.resolution = "denied"
+        approval.resolved_by = resolved_by
+        approval.resolved_at = time.time()
+        self._store.update(approval_id, approval)
+        if remember:
+            self.set_policy(agent=approval.agent, tool=approval.tool, decision="deny")
+        self._broadcast(approval)
+        return approval
+
+    def set_policy(self, agent: str, tool: str, decision: str) -> None:
+        self._store.set_policy(agent=agent, tool=tool, decision=decision)
