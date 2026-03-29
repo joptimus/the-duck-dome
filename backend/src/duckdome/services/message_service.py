@@ -33,6 +33,8 @@ class LoopGuard:
     """
 
     def __init__(self, max_hops: int = 4) -> None:
+        if max_hops < 1:
+            raise ValueError("max_hops must be >= 1")
         self._hops: dict[str, int] = {}  # channel_id -> hop count
         self._paused: dict[str, bool] = {}  # channel_id -> paused
         self.max_hops = max_hops
