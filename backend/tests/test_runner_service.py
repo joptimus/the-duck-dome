@@ -55,7 +55,7 @@ def setup_channel(services, all_stores):
 @patch("duckdome.services.runner_service.get_executor")
 def test_execute_next_success(mock_exec, services, setup_channel, all_stores):
     _, _, _, runner_svc = services
-    ch, msg = setup_channel
+    ch, _msg = setup_channel
     cs, ms, _ = all_stores
 
     mock_exec.return_value.execute.return_value = RunResult(
