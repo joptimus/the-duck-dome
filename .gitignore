@@ -1,0 +1,106 @@
+# =========================
+# Node / React / Electron
+# =========================
+node_modules/
+dist/
+build/
+out/
+.next/
+.vite/
+.cache/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Electron
+*.asar
+*.tsbuildinfo
+
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual envs
+.venv/
+venv/
+env/
+ENV/
+
+# Python build / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# UV / Python tooling
+.uv/
+uv.lock
+
+# =========================
+# OS junk
+# =========================
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# Env / Secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# Logs / temp
+# =========================
+logs/
+tmp/
+temp/
+*.tmp
+
+# =========================
+# Testing / coverage
+# =========================
+.coverage
+htmlcov/
+.pytest_cache/
+
+# =========================
+# Generated / binaries
+# =========================
+*.exe
+*.dll
+*.dylib
+*.bin
+
+# =========================
+# Misc
+# =========================
+*.zip
+*.tar
+*.gz
+
+# =========================
+# App-specific (DuckDome)
+# =========================
+# user data / runtime data
+data/
+sessions/
+exports/
+uploads/
