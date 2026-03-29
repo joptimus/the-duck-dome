@@ -22,10 +22,14 @@ logger = logging.getLogger(__name__)
 def get_mcp_port() -> int:
     raw = os.environ.get("DUCKDOME_MCP_PORT", "8200")
     try:
-        return int(raw)
+        port = int(raw)
     except ValueError:
         logger.warning("Invalid DUCKDOME_MCP_PORT=%r, using default 8200", raw)
         return 8200
+    if not (1 <= port <= 65535):
+        logger.warning("DUCKDOME_MCP_PORT=%d out of range (1-65535), using default 8200", port)
+        return 8200
+    return port
 
 
 def run_mcp_server(bridge: McpBridge, host: str = "127.0.0.1") -> None:

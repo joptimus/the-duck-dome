@@ -24,6 +24,16 @@ def test_invalid_port_falls_back_to_default():
         assert get_mcp_port() == 8200
 
 
+def test_port_out_of_range_high():
+    with patch.dict(os.environ, {"DUCKDOME_MCP_PORT": "70000"}):
+        assert get_mcp_port() == 8200
+
+
+def test_port_out_of_range_zero():
+    with patch.dict(os.environ, {"DUCKDOME_MCP_PORT": "0"}):
+        assert get_mcp_port() == 8200
+
+
 def test_bridge_creates_streamable_http_app(tmp_path):
     store = MessageStore(data_dir=tmp_path)
     svc = MessageService(store=store, known_agents=["claude"])
