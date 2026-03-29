@@ -267,10 +267,14 @@ export default function ChannelShell() {
         const msgChannelId = event.message.channel || event.message.channel_id;
         if (msgChannelId && msgChannelId === channelId) {
           const normalized = normalizeMessages([event.message], channelId);
-          setMessagesByChannelId((prev) => ({
-            ...prev,
-            [channelId]: [...(prev[channelId] || []), ...normalized],
-          }));
+          setMessagesByChannelId((prev) => {
+            const existing = prev[channelId] || [];
+            const deduped = normalized.filter(
+              (msg) => !existing.some((e) => e.id === msg.id),
+            );
+            if (deduped.length === 0) return prev;
+            return { ...prev, [channelId]: [...existing, ...deduped] };
+          });
         }
       }
 
