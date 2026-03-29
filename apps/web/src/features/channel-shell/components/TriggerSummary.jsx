@@ -6,19 +6,19 @@ export default function TriggerSummary({ summary, hasData, error }) {
       {!error && !hasData ? (
         <div className="trigger-summary__empty">No runtime data yet for this channel.</div>
       ) : null}
-      {!error && hasData ? (
+      {!error && hasData && summary ? (
         <div className="trigger-summary__grid">
           <article className="trigger-card">
             <div className="trigger-card__label">Pending triggers</div>
-            <div className="trigger-card__value">{summary.pending}</div>
+            <div className="trigger-card__value">{summary.pending ?? 0}</div>
           </article>
           <article className="trigger-card">
             <div className="trigger-card__label">Claimed triggers</div>
-            <div className="trigger-card__value">{summary.claimed}</div>
+            <div className="trigger-card__value">{summary.claimed ?? 0}</div>
           </article>
           <article className="trigger-card">
             <div className="trigger-card__label">Failed triggers</div>
-            <div className="trigger-card__value">{summary.failed}</div>
+            <div className="trigger-card__value">{summary.failed ?? 0}</div>
           </article>
         </div>
       ) : null}
