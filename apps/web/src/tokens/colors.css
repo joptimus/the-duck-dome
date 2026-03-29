@@ -1,0 +1,66 @@
+:root {
+  /* Surfaces */
+  --bg-app: #0d1117;
+  --bg-surface: #111827;
+  --bg-elevated: #1a2233;
+  --bg-sidebar: #0b1020;
+  --bg-input: #0f172a;
+
+  /* Text */
+  --text-primary: #e6edf3;
+  --text-secondary: #9ca3af;
+  --text-muted: #6b7280;
+  --text-bright: #f8fafc;
+
+  /* Brand */
+  --blue: #00d4ff;
+  --purple: #a855f7;
+  --purple-glow: #c084fc;
+  --gradient: linear-gradient(90deg, #00d4ff 0%, #a855f7 100%);
+
+  /* Status */
+  --success: #00ffa3;
+  --warning: #f59e0b;
+  --error: #ff4d6d;
+  --info: #38bdf8;
+
+  /* Border */
+  --border: #1f2937;
+
+  /* Status mapping */
+  --status-processing: var(--blue);
+  --status-attacking: var(--error);
+  --status-debating: var(--purple);
+  --status-analyzing: var(--info);
+  --status-idle: var(--text-muted);
+
+  /* Agent primaries */
+  --agent-claude: #ff8a5c;
+  --agent-codex: #00ffaa;
+  --agent-gemini: #6baaff;
+  --agent-kimi: #3d9eff;
+  --agent-qwen: #a78bff;
+  --agent-kilo: #eeff41;
+  --agent-minimax: #3dffc8;
+  --agent-user: #a855f7;
+
+  /* Agent tinted backgrounds */
+  --agent-claude-bg: rgba(255, 138, 92, 0.06);
+  --agent-codex-bg: rgba(0, 255, 170, 0.06);
+  --agent-gemini-bg: rgba(107, 170, 255, 0.06);
+  --agent-kimi-bg: rgba(61, 158, 255, 0.06);
+  --agent-qwen-bg: rgba(167, 139, 255, 0.06);
+  --agent-kilo-bg: rgba(238, 255, 65, 0.05);
+  --agent-minimax-bg: rgba(61, 255, 200, 0.06);
+  --agent-user-bg: rgba(168, 85, 247, 0.06);
+
+  /* Agent borders */
+  --agent-claude-border: rgba(255, 138, 92, 0.22);
+  --agent-codex-border: rgba(0, 255, 170, 0.22);
+  --agent-gemini-border: rgba(107, 170, 255, 0.22);
+  --agent-kimi-border: rgba(61, 158, 255, 0.22);
+  --agent-qwen-border: rgba(167, 139, 255, 0.22);
+  --agent-kilo-border: rgba(238, 255, 65, 0.18);
+  --agent-minimax-border: rgba(61, 255, 200, 0.22);
+  --agent-user-border: rgba(168, 85, 247, 0.22);
+}

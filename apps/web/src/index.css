@@ -1,15 +1,41 @@
-:root {
-  color: #e6edf3;
-  background: #0b1220;
-}
+@import "./tokens/colors.css";
+@import "./tokens/typography.css";
+@import "./tokens/animations.css";
 
 * {
+  margin: 0;
+  padding: 0;
   box-sizing: border-box;
 }
 
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
 body {
-  margin: 0;
-  font-family: Inter, "Segoe UI", sans-serif;
-  background: radial-gradient(circle at 15% 10%, #1a2b47, #0b1220 45%);
-  color: #e6edf3;
+  font-family: var(--font-body);
+  font-size: var(--fs-body);
+  line-height: 1.5;
+  background: var(--bg-app);
+  color: var(--text-primary);
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
 }

@@ -1,0 +1,28 @@
+@import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@400;500;600;700&family=Source+Sans+3:wght@300;400;500;600&display=swap");
+
+:root {
+  --font-display: "Orbitron", "Rajdhani", sans-serif;
+  --font-label: "Rajdhani", "Source Sans 3", sans-serif;
+  --font-body: "Source Sans 3", sans-serif;
+  --font-mono: "JetBrains Mono", monospace;
+
+  /* Type scale */
+  --fs-display-lg: 22px;
+  --fs-display: 20px;
+  --fs-xl: 18px;
+  --fs-body: 16px;
+  --fs-label-lg: 15px;
+  --fs-label: 14px;
+  --fs-sm: 13px;
+  --fs-xs: 12px;
+  --fs-timestamp: 11px;
+  --fs-micro: 10px;
+
+  /* Letter-spacing */
+  --ls-xs: 0.04em;
+  --ls-sm: 0.06em;
+  --ls-md: 0.08em;
+  --ls-lg: 0.1em;
+  --ls-xl: 0.14em;
+  --ls-xxl: 0.15em;
+}
