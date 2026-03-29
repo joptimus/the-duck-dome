@@ -13,7 +13,7 @@ Differences from legacy behavior:
 import pytest
 
 from duckdome.models.message import MessageType
-from duckdome.services.message_service import LoopGuard, MessageService
+from duckdome.services.message_service import GuardResult, LoopGuard, MessageService
 from duckdome.stores.message_store import MessageStore
 
 AGENTS = ["claude", "codex", "gemini"]
@@ -25,28 +25,28 @@ AGENTS = ["claude", "codex", "gemini"]
 class TestLoopGuard:
     def test_human_message_always_passes(self):
         guard = LoopGuard(max_hops=4)
-        assert guard.check("ch1", "human", AGENTS) is True
+        assert guard.check("ch1", "human", AGENTS).should_route is True
 
     def test_agent_messages_within_limit_pass(self):
         guard = LoopGuard(max_hops=4)
         for _ in range(4):
-            assert guard.check("ch1", "claude", AGENTS) is True
+            assert guard.check("ch1", "claude", AGENTS).should_route is True
 
     def test_agent_messages_over_limit_blocked(self):
         guard = LoopGuard(max_hops=4)
         for _ in range(4):
             guard.check("ch1", "claude", AGENTS)
         # 5th agent hop triggers the guard
-        assert guard.check("ch1", "claude", AGENTS) is False
+        assert guard.check("ch1", "claude", AGENTS).should_route is False
 
     def test_paused_blocks_subsequent_agent_messages(self):
         guard = LoopGuard(max_hops=2)
         guard.check("ch1", "claude", AGENTS)
         guard.check("ch1", "codex", AGENTS)
         # 3rd hop triggers guard
-        assert guard.check("ch1", "claude", AGENTS) is False
+        assert guard.check("ch1", "claude", AGENTS).should_route is False
         # Further agent messages silently blocked
-        assert guard.check("ch1", "codex", AGENTS) is False
+        assert guard.check("ch1", "codex", AGENTS).should_route is False
 
     def test_human_message_resets_guard(self):
         guard = LoopGuard(max_hops=2)
@@ -56,7 +56,7 @@ class TestLoopGuard:
         assert guard.is_paused("ch1") is True
 
         # Human resets
-        assert guard.check("ch1", "human", AGENTS) is True
+        assert guard.check("ch1", "human", AGENTS).should_route is True
         assert guard.is_paused("ch1") is False
         assert guard.hop_count("ch1") == 0
 
@@ -68,7 +68,7 @@ class TestLoopGuard:
         assert guard.is_paused("ch1") is True
         # ch2 is unaffected
         assert guard.is_paused("ch2") is False
-        assert guard.check("ch2", "claude", AGENTS) is True
+        assert guard.check("ch2", "claude", AGENTS).should_route is True
 
     def test_reset_method(self):
         guard = LoopGuard(max_hops=2)
@@ -81,16 +81,16 @@ class TestLoopGuard:
 
     def test_custom_max_hops(self):
         guard = LoopGuard(max_hops=1)
-        assert guard.check("ch1", "claude", AGENTS) is True
+        assert guard.check("ch1", "claude", AGENTS).should_route is True
         # 2nd hop triggers
-        assert guard.check("ch1", "codex", AGENTS) is False
+        assert guard.check("ch1", "codex", AGENTS).should_route is False
 
     def test_agent_check_case_insensitive(self):
         guard = LoopGuard(max_hops=2)
-        assert guard.check("ch1", "Claude", AGENTS) is True
-        assert guard.check("ch1", "CODEX", AGENTS) is True
+        assert guard.check("ch1", "Claude", AGENTS).should_route is True
+        assert guard.check("ch1", "CODEX", AGENTS).should_route is True
         # 3rd triggers
-        assert guard.check("ch1", "claude", AGENTS) is False
+        assert guard.check("ch1", "claude", AGENTS).should_route is False
 
 
 # --- MessageService integration tests ---
@@ -198,6 +198,12 @@ class TestLoopGuardIntegration:
         msg = service.send(text="@claude can you help?", channel="general", sender="human")
         assert msg.delivery is not None
         assert msg.delivery.target == "claude"
+
+    def test_self_mention_filtered(self, service):
+        """Agent mentioning itself should not create a delivery (matches legacy)."""
+        msg = service.send(text="@claude think harder", channel="general", sender="claude")
+        assert msg.delivery is None
+        assert msg.deliveries == []
 
     def test_agent_message_without_mention_still_stored(self, service, store):
         """Agent messages without @mentions are stored even during guard."""
