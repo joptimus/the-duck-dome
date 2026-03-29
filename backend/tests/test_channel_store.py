@@ -23,9 +23,11 @@ def test_get_nonexistent_channel(store):
     assert store.get_channel("nonexistent") is None
 
 
-def test_list_channels(store):
+def test_list_channels(store, tmp_path):
+    repo = tmp_path / "my-app"
+    repo.mkdir()
     store.add_channel(Channel(name="general", type=ChannelType.GENERAL))
-    store.add_channel(Channel(name="my-app", type=ChannelType.REPO, repo_path="/tmp/my-app"))
+    store.add_channel(Channel(name="my-app", type=ChannelType.REPO, repo_path=str(repo)))
     channels = store.list_channels()
     assert len(channels) == 2
 
@@ -69,9 +71,11 @@ def test_list_agents_by_channel(store):
     assert types == {"claude", "codex"}
 
 
-def test_agents_do_not_cross_channels(store):
+def test_agents_do_not_cross_channels(store, tmp_path):
+    repo = tmp_path / "my-app"
+    repo.mkdir()
     ch1 = Channel(name="general", type=ChannelType.GENERAL)
-    ch2 = Channel(name="my-app", type=ChannelType.REPO, repo_path="/tmp/my-app")
+    ch2 = Channel(name="my-app", type=ChannelType.REPO, repo_path=str(repo))
     store.add_channel(ch1)
     store.add_channel(ch2)
     store.add_agent(AgentInstance(channel_id=ch1.id, agent_type="claude"))

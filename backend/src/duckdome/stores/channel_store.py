@@ -87,6 +87,8 @@ class ChannelStore(BaseChannelStore):
     def update_agent(self, agent_id: str, agent: AgentInstance) -> AgentInstance | None:
         if agent_id not in self._agents:
             return None
+        if agent.id != agent_id:
+            raise ValueError(f"agent.id mismatch: expected {agent_id}, got {agent.id}")
         self._agents[agent_id] = agent
         self._save_agents()
         return agent

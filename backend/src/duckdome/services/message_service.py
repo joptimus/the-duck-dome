@@ -49,7 +49,7 @@ class MessageService:
     ) -> list[str]:
         if self._channel_service is None:
             return mentions
-        channel_agents = set(self._channel_service.get_agent_types(channel_id))
+        channel_agents = {a.lower() for a in self._channel_service.get_agent_types(channel_id)}
         return [m for m in mentions if m in channel_agents]
 
     def send(self, text: str, channel: str, sender: str) -> Message:
