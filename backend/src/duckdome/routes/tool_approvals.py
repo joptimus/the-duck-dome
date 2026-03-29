@@ -32,6 +32,11 @@ class ResolveApprovalBody(BaseModel):
     remember: bool = False
 
 
+class ClearPoliciesBody(BaseModel):
+    agent: str | None = None
+    tool: str | None = None
+
+
 @router.post("/request", status_code=201)
 def request_approval(body: RequestApprovalBody):
     svc = _get_service()
@@ -41,14 +46,17 @@ def request_approval(body: RequestApprovalBody):
         arguments=body.arguments,
         channel=body.channel,
     )
-    if "approval" in result:
-        approval = result["approval"]
+    if result.approval is not None:
+        approval = result.approval
         return {
             "status": "pending",
             "approval_id": approval.id,
             "approval": approval.model_dump(mode="json"),
         }
-    return result
+    response = {"status": result.status}
+    if result.source:
+        response["source"] = result.source
+    return response
 
 
 @router.get("/pending")
@@ -56,6 +64,19 @@ def list_pending(channel: str | None = None):
     svc = _get_service()
     pending = svc.list_pending(channel=channel)
     return [item.model_dump(mode="json") for item in pending]
+
+
+@router.get("/policies")
+def list_policies():
+    svc = _get_service()
+    return svc.list_policies()
+
+
+@router.delete("/policies")
+def clear_policies(body: ClearPoliciesBody):
+    svc = _get_service()
+    removed = svc.clear_policies(agent=body.agent, tool=body.tool)
+    return {"removed": removed}
 
 
 @router.post("/{approval_id}/approve")

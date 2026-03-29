@@ -4,7 +4,11 @@ import json
 import os
 from pathlib import Path
 
-from duckdome.models.tool_approval import ToolApproval, ToolPolicyDecision
+from duckdome.models.tool_approval import (
+    ToolApproval,
+    ToolApprovalStatus,
+    ToolPolicyDecision,
+)
 
 
 class ToolApprovalStore:
@@ -95,7 +99,7 @@ class ToolApprovalStore:
         result: list[ToolApproval] = []
         for approval_id in self._order:
             approval = self._approvals[approval_id]
-            if approval.status != "pending":
+            if approval.status != ToolApprovalStatus.PENDING:
                 continue
             if channel and approval.channel != channel:
                 continue
@@ -104,6 +108,12 @@ class ToolApprovalStore:
 
     def get_policy(self, agent: str, tool: str) -> str | None:
         return self._policy.get(agent, {}).get(tool)
+
+    def list_policies(self) -> dict[str, dict[str, str]]:
+        return {
+            agent: dict(tools)
+            for agent, tools in self._policy.items()
+        }
 
     def set_policy(self, agent: str, tool: str, decision: str) -> None:
         normalized = decision.strip().lower()
@@ -114,3 +124,23 @@ class ToolApprovalStore:
             raise ValueError(f"Invalid policy decision: {decision}")
         self._policy.setdefault(agent, {})[tool] = normalized
         self._save_policy()
+
+    def clear_policy(self, agent: str, tool: str | None = None) -> bool:
+        if agent not in self._policy:
+            return False
+        if tool is None:
+            del self._policy[agent]
+            self._save_policy()
+            return True
+        removed = self._policy[agent].pop(tool, None) is not None
+        if not self._policy[agent]:
+            del self._policy[agent]
+        if removed:
+            self._save_policy()
+        return removed
+
+    def clear_all_policies(self) -> int:
+        count = sum(len(tools) for tools in self._policy.values())
+        self._policy = {}
+        self._save_policy()
+        return count

@@ -108,6 +108,40 @@ def test_approve_with_remember_sets_policy(client: TestClient):
     assert second.json() == {"status": "approved", "source": "policy"}
 
 
+def test_list_and_clear_policies(client: TestClient):
+    first = client.post(
+        "/api/tool_approvals/request",
+        json={
+            "agent": "codex",
+            "tool": "exec_command",
+            "arguments": {"cmd": "echo one"},
+            "channel": "general",
+        },
+    ).json()
+    approval_id = first["approval_id"]
+    approved = client.post(
+        f"/api/tool_approvals/{approval_id}/approve",
+        json={"resolved_by": "human", "remember": True},
+    )
+    assert approved.status_code == 200
+
+    policies = client.get("/api/tool_approvals/policies")
+    assert policies.status_code == 200
+    assert policies.json().get("codex", {}).get("exec_command") == "allow"
+
+    cleared = client.request(
+        "DELETE",
+        "/api/tool_approvals/policies",
+        json={"agent": "codex", "tool": "exec_command"},
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["removed"] == 1
+
+    policies_after = client.get("/api/tool_approvals/policies")
+    assert policies_after.status_code == 200
+    assert policies_after.json().get("codex", {}).get("exec_command") is None
+
+
 def test_websocket_broadcasts_on_request_and_resolve(app):
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:

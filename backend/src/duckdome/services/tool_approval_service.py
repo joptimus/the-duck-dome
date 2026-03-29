@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from duckdome.models.tool_approval import ToolApproval, ToolApprovalStatus
@@ -30,6 +31,12 @@ class ToolApprovalService:
             }
         )
 
+    @dataclass(frozen=True)
+    class RequestResult:
+        status: str
+        source: str | None = None
+        approval: ToolApproval | None = None
+
     def request(
         self,
         *,
@@ -37,12 +44,12 @@ class ToolApprovalService:
         tool: str,
         arguments: dict | None,
         channel: str,
-    ) -> dict:
+    ) -> RequestResult:
         policy = self._store.get_policy(agent, tool)
         if policy == "allow":
-            return {"status": "approved", "source": "policy"}
+            return self.RequestResult(status="approved", source="policy")
         if policy == "deny":
-            return {"status": "denied", "source": "policy"}
+            return self.RequestResult(status="denied", source="policy")
 
         approval = ToolApproval(
             agent=agent,
@@ -52,7 +59,7 @@ class ToolApprovalService:
         )
         self._store.add(approval)
         self._broadcast(approval)
-        return {"status": "pending", "approval": approval}
+        return self.RequestResult(status="pending", approval=approval)
 
     def list_pending(self, channel: str | None = None) -> list[ToolApproval]:
         return self._store.list_pending(channel=channel)
@@ -91,3 +98,15 @@ class ToolApprovalService:
 
     def set_policy(self, agent: str, tool: str, decision: str) -> None:
         self._store.set_policy(agent=agent, tool=tool, decision=decision)
+
+    def list_policies(self) -> dict[str, dict[str, str]]:
+        return self._store.list_policies()
+
+    def clear_policies(
+        self, agent: str | None = None, tool: str | None = None
+    ) -> int:
+        if agent is None:
+            return self._store.clear_all_policies()
+        if tool is None:
+            return 1 if self._store.clear_policy(agent=agent) else 0
+        return 1 if self._store.clear_policy(agent=agent, tool=tool) else 0
