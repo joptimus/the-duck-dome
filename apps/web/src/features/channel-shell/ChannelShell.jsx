@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   createChannel,
   getChannel,
@@ -8,6 +8,7 @@ import {
   getChannelTriggers,
   sendChannelMessage,
 } from "./api";
+import { createWsClient } from "../../api/ws";
 import { mockMessagesByChannelId } from "./mockData";
 import AgentRuntimeStrip from "./components/AgentRuntimeStrip";
 import ChannelCreateModal from "./components/ChannelCreateModal";
@@ -137,6 +138,10 @@ function mergeRuntimeAgents(agents, openByAgent) {
   });
 }
 
+const WS_URL = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000")
+  .replace(/\/$/, "")
+  .replace(/^http/, "ws") + "/ws";
+
 export default function ChannelShell() {
   const [channels, setChannels] = useState([]);
   const [activeChannelId, setActiveChannelId] = useState(null);
@@ -149,7 +154,8 @@ export default function ChannelShell() {
   const [messagesError, setMessagesError] = useState(null);
   const [messagesByChannelId, setMessagesByChannelId] = useState(mockMessagesByChannelId);
   const [createOpen, setCreateOpen] = useState(false);
-  const [refreshTick, setRefreshTick] = useState(0);
+  const [wsConnected, setWsConnected] = useState(false);
+  const activeChannelIdRef = useRef(null);
 
   useEffect(() => {
     let ignore = false;
@@ -186,14 +192,13 @@ export default function ChannelShell() {
     return undefined;
   }, [activeChannelId]);
 
+  // Keep activeChannelId in a ref so the WebSocket handler can read it
+  // without being a dependency of the WS effect.
   useEffect(() => {
-    if (!activeChannelId) return undefined;
-    const timer = setInterval(() => {
-      setRefreshTick((tick) => tick + 1);
-    }, 3000);
-    return () => clearInterval(timer);
+    activeChannelIdRef.current = activeChannelId;
   }, [activeChannelId]);
 
+  // Load channel context via REST on channel switch (initial history load).
   useEffect(() => {
     let ignore = false;
     if (!activeChannelId) return undefined;
@@ -251,7 +256,40 @@ export default function ChannelShell() {
     return () => {
       ignore = true;
     };
-  }, [activeChannelId, refreshTick]);
+  }, [activeChannelId]);
+
+  // WebSocket connection for real-time updates (replaces 3-second polling).
+  useEffect(() => {
+    function handleWsEvent(event) {
+      const channelId = activeChannelIdRef.current;
+
+      if (event.type === "new_message" && event.message) {
+        const msgChannelId = event.message.channel || event.message.channel_id;
+        if (msgChannelId && msgChannelId === channelId) {
+          const normalized = normalizeMessages([event.message], channelId);
+          setMessagesByChannelId((prev) => ({
+            ...prev,
+            [channelId]: [...(prev[channelId] || []), ...normalized],
+          }));
+        }
+      }
+
+      if (event.type === "trigger_state_change" && event.trigger_id) {
+        setTriggers((prev) =>
+          prev.map((t) => (t.id === event.trigger_id ? { ...t, state: event.state } : t)),
+        );
+      }
+
+      if (event.type === "agent_status_change" && event.agent_id) {
+        setAgents((prev) =>
+          prev.map((a) => (a.id === event.agent_id ? { ...a, status: event.status } : a)),
+        );
+      }
+    }
+
+    const client = createWsClient(WS_URL, handleWsEvent, setWsConnected);
+    return () => client.close();
+  }, []);
 
   const activeMessages = useMemo(
     () => (activeChannelId ? messagesByChannelId[activeChannelId] || [] : []),
@@ -298,15 +336,13 @@ export default function ChannelShell() {
     if (!activeChannelId) {
       return Promise.reject(new Error("No active channel selected"));
     }
-    return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" })
-      .then(() => {
-        setRefreshTick((tick) => tick + 1);
-      })
-      .catch((error) => {
+    return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" }).catch(
+      (error) => {
         console.error("Failed to send message:", error);
         setMessagesError("Failed to send message");
         throw error;
-      });
+      },
+    );
   };
 
   const showChannel = activeChannel || channels.find((channel) => channel.id === activeChannelId) || null;
@@ -321,6 +357,10 @@ export default function ChannelShell() {
       />
 
       <main className="channel-shell-main">
+        <div className={`ws-status ${wsConnected ? "ws-status--connected" : "ws-status--reconnecting"}`}>
+          <span className="ws-status__dot" />
+          {wsConnected ? "Connected" : "Reconnecting\u2026"}
+        </div>
         <ChannelHeader channel={showChannel} runtimeStrip={<AgentRuntimeStrip agentMap={runtimeAgentMap} />} />
         {channelError ? <div className="channel-header-error">{channelError}</div> : null}
         <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={triggerError} />
