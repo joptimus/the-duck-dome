@@ -4,7 +4,7 @@ export const ChannelType = {
 };
 
 export const AgentPresence = {
-  ONLINE: "online",
+  IDLE: "idle",
   OFFLINE: "offline",
   WORKING: "working",
 };

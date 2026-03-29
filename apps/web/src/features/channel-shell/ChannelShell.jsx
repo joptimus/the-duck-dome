@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { createChannel, getChannel, getChannelAgents, getChannels } from "./api";
+import { createChannel, getChannel, getChannelAgents, getChannels, getChannelTriggers } from "./api";
 import { mockMessagesByChannelId } from "./mockData";
-import AgentStatusRow from "./components/AgentStatusRow";
+import AgentRuntimeStrip from "./components/AgentRuntimeStrip";
 import ChannelCreateModal from "./components/ChannelCreateModal";
 import ChannelHeader from "./components/ChannelHeader";
 import ChatShell from "./components/ChatShell";
+import RuntimeDetailsPanel from "./components/RuntimeDetailsPanel";
 import SidebarChannelList from "./components/SidebarChannelList";
+import TriggerSummary from "./components/TriggerSummary";
 import "./channelShell.css";
 
 function normalizeChannels(data) {
@@ -19,11 +21,62 @@ function normalizeChannels(data) {
   }));
 }
 
+function normalizeAgents(data, channelId) {
+  if (!Array.isArray(data)) return [];
+  return data.map((agent, index) => ({
+    id: agent.id || `${channelId || "channel"}:${agent.agent_type || agent.name || index}`,
+    channel_id: agent.channel_id || channelId || "",
+    agent_type: String(agent.agent_type || agent.name || "unknown").toLowerCase(),
+    status: agent.status === "working" ? "working" : agent.status === "idle" ? "idle" : "offline",
+    current_task: agent.current_task || null,
+    last_response_time: agent.last_response_time || agent.last_activity || null,
+    last_heartbeat: agent.last_heartbeat || agent.last_activity || null,
+    last_error: agent.last_error || null,
+    open_trigger_count: Number.isFinite(Number(agent.open_trigger_count))
+      ? Number(agent.open_trigger_count)
+      : 0,
+  }));
+}
+
+function normalizeTriggers(data, channelId) {
+  if (!Array.isArray(data)) return [];
+  return data.map((trigger, index) => ({
+    id: trigger.id || `trigger-${index}`,
+    channel_id: trigger.channel_id || channelId || "",
+    target: String(trigger.target || trigger.agent_type || "").toLowerCase(),
+    state: String(trigger.state || "pending").toLowerCase(),
+  }));
+}
+
+function summarizeTriggers(triggers) {
+  return triggers.reduce(
+    (acc, trigger) => {
+      if (trigger.state === "pending") acc.pending += 1;
+      if (trigger.state === "claimed") acc.claimed += 1;
+      if (trigger.state === "failed") acc.failed += 1;
+      return acc;
+    },
+    { pending: 0, claimed: 0, failed: 0 },
+  );
+}
+
+function computeOpenByAgent(triggers) {
+  const counts = {};
+  for (const trigger of triggers) {
+    if (trigger.state !== "pending" && trigger.state !== "claimed") continue;
+    const target = trigger.target || "unknown";
+    counts[target] = (counts[target] || 0) + 1;
+  }
+  return counts;
+}
+
 export default function ChannelShell() {
   const [channels, setChannels] = useState([]);
   const [activeChannelId, setActiveChannelId] = useState(null);
   const [activeChannel, setActiveChannel] = useState(null);
   const [agents, setAgents] = useState([]);
+  const [triggers, setTriggers] = useState([]);
+  const [runtimeError, setRuntimeError] = useState(null);
   const [messagesByChannelId, setMessagesByChannelId] = useState(mockMessagesByChannelId);
   const [createOpen, setCreateOpen] = useState(false);
 
@@ -50,13 +103,34 @@ export default function ChannelShell() {
     if (!activeChannelId) return undefined;
 
     async function loadChannelContext() {
-      const [channel, channelAgents] = await Promise.all([
+      setRuntimeError(null);
+      const [channelResult, agentsResult, triggersResult] = await Promise.allSettled([
         getChannel(activeChannelId),
         getChannelAgents(activeChannelId),
+        getChannelTriggers(activeChannelId),
       ]);
       if (ignore) return;
-      setActiveChannel(channel);
-      setAgents(Array.isArray(channelAgents) ? channelAgents : []);
+
+      if (channelResult.status === "fulfilled") {
+        setActiveChannel(channelResult.value);
+      } else {
+        setActiveChannel(null);
+        setRuntimeError("Backend unavailable");
+      }
+
+      if (agentsResult.status === "fulfilled") {
+        setAgents(normalizeAgents(agentsResult.value, activeChannelId));
+      } else {
+        setAgents([]);
+        setRuntimeError("Runtime agent state unavailable");
+      }
+
+      if (triggersResult.status === "fulfilled") {
+        setTriggers(normalizeTriggers(triggersResult.value, activeChannelId));
+      } else {
+        setTriggers([]);
+        setRuntimeError("Trigger data unavailable");
+      }
     }
 
     loadChannelContext();
@@ -69,6 +143,22 @@ export default function ChannelShell() {
     () => (activeChannelId ? messagesByChannelId[activeChannelId] || [] : []),
     [activeChannelId, messagesByChannelId],
   );
+  const triggerSummary = useMemo(() => summarizeTriggers(triggers), [triggers]);
+  const openByAgent = useMemo(() => computeOpenByAgent(triggers), [triggers]);
+  const runtimeAgentMap = useMemo(() => {
+    const map = {};
+    for (const agent of agents) {
+      const openTriggerCount = Number.isFinite(Number(agent.open_trigger_count))
+        ? Number(agent.open_trigger_count)
+        : openByAgent[agent.agent_type] || 0;
+      map[agent.agent_type] = {
+        ...agent,
+        open_trigger_count: openTriggerCount,
+      };
+    }
+    return map;
+  }, [agents, openByAgent]);
+  const hasRuntimeData = agents.length > 0 || triggers.length > 0;
 
   const onCreate = async (payload) => {
     const created = await createChannel(payload);
@@ -102,8 +192,9 @@ export default function ChannelShell() {
       />
 
       <main className="channel-shell-main">
-        <ChannelHeader channel={activeChannel} />
-        <AgentStatusRow agents={agents} />
+        <ChannelHeader channel={activeChannel} runtimeStrip={<AgentRuntimeStrip agentMap={runtimeAgentMap} />} />
+        <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={runtimeError} />
+        <RuntimeDetailsPanel channelId={activeChannelId} agents={agents} error={runtimeError} />
         <ChatShell channel={activeChannel} messages={activeMessages} onSend={onSend} />
       </main>
 
