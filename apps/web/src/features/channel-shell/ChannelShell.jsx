@@ -92,7 +92,7 @@ function normalizeMessages(data, channelId) {
       sender,
       sender_type: isAssistant ? "assistant" : senderLower === "system" ? "system" : "user",
       text: message.text || "",
-      time: formatClockTime(message.timestamp || message.time),
+      time: formatClockTime(message.timestamp ?? message.time),
     };
   });
 }
@@ -179,6 +179,10 @@ export default function ChannelShell() {
     setAgentError(null);
     setTriggerError(null);
     setMessagesError(null);
+    setMessagesByChannelId((prev) => ({
+      ...prev,
+      [activeChannelId]: [],
+    }));
     return undefined;
   }, [activeChannelId]);
 
@@ -235,6 +239,10 @@ export default function ChannelShell() {
         }));
         setMessagesError(null);
       } else {
+        setMessagesByChannelId((prev) => ({
+          ...prev,
+          [activeChannelId]: [],
+        }));
         setMessagesError("Messages unavailable");
       }
     }
