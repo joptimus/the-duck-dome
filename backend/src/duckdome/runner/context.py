@@ -55,6 +55,11 @@ def build_context(
     source_msg = message_store.get(trigger.source_message_id)
     if source_msg is None:
         raise ValueError(f"Source message not found: {trigger.source_message_id}")
+    if source_msg.channel != trigger.channel_id:
+        raise ValueError(
+            f"Source message channel mismatch: message in {source_msg.channel}, "
+            f"trigger in {trigger.channel_id}"
+        )
 
     channel_ctx = ChannelContext(
         channel_id=channel.id,

@@ -34,4 +34,4 @@ def execute(body: ExecuteRequest):
     )
     if run is None:
         return {"run": None, "reason": "no pending triggers"}
-    return run.model_dump()
+    return {"run": run.model_dump()}
