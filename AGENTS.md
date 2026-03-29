@@ -91,3 +91,33 @@ When multiple solutions are possible, choose the one that:
 2. preserves clean layer boundaries
 3. reduces setup and runtime complexity
 4. avoids magic behavior
+
+## Legacy Feature Reference Rule
+
+When implementing any feature, you MUST:
+
+1. Identify the corresponding feature in the legacy repository:
+   agentchattr
+
+2. Reference:
+   - relevant files
+   - relevant behavior
+   - expected inputs/outputs
+
+3. Confirm:
+   - what behavior must be preserved
+   - what is being simplified or changed
+
+4. Explicitly state:
+   - "This feature replaces <legacy feature>"
+   - "Differences from legacy behavior: ..."
+
+5. Do NOT:
+   - re-invent behavior without checking legacy
+   - drop functionality without calling it out
+   - assume behavior from memory
+
+If unsure, say:
+"Legacy behavior unclear — needs confirmation"
+
+The goal is to preserve correctness while improving structure.
