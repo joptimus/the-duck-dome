@@ -113,7 +113,7 @@ function summarizeTriggers(triggers) {
 function computeOpenByAgent(triggers) {
   const counts = {};
   for (const trigger of triggers) {
-    if (trigger.state !== "pending" && trigger.state !== "claimed") continue;
+    if (trigger.state !== "pending" && trigger.state !== "claimed" && trigger.state !== "working") continue;
     const target = trigger.target || "unknown";
     counts[target] = (counts[target] || 0) + 1;
   }
@@ -266,11 +266,13 @@ export default function ChannelShell() {
   const claudeRuntime = runtimeAgentMap.claude || null;
   const isClaudeWorking = claudeRuntime?.status === "working";
   const latestClaudeFailure = useMemo(() => {
-    const failed = triggers
-      .filter((trigger) => trigger.target === "claude" && trigger.state === "failed" && trigger.last_error)
+    const claudeTriggers = triggers
+      .filter((trigger) => trigger.target === "claude")
       .sort((a, b) => Number(b.completed_at || b.created_at || 0) - Number(a.completed_at || a.created_at || 0));
-    if (failed.length === 0) return null;
-    const text = String(failed[0].last_error || "")
+    if (claudeTriggers.length === 0) return null;
+    const latest = claudeTriggers[0];
+    if (latest.state !== "failed" || !latest.last_error) return null;
+    const text = String(latest.last_error || "")
       .replace(/traceback[\s\S]*/i, "")
       .split("\n")[0]
       .trim();
@@ -292,7 +294,8 @@ export default function ChannelShell() {
         setRefreshTick((tick) => tick + 1);
       })
       .catch((error) => {
-        setMessagesError(error instanceof Error ? error.message : "Failed to send message");
+        console.error("Failed to send message:", error);
+        setMessagesError("Failed to send message");
         throw error;
       });
   };

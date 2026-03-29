@@ -64,7 +64,11 @@ export default function ChatShell({ channel, messages, onSend, messageError, cla
             <div
               key={message.id}
               className={
-                message.sender_type === "assistant" ? "chat-message chat-message--assistant" : "chat-message"
+                message.sender_type === "assistant"
+                  ? "chat-message chat-message--assistant"
+                  : message.sender_type === "system"
+                    ? "chat-message chat-message--system"
+                    : "chat-message"
               }
             >
               <div className="chat-message__meta">

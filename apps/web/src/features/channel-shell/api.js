@@ -88,12 +88,7 @@ export async function getChannelTriggers(channelId) {
 }
 
 export async function getChannelMessages(channelId) {
-  try {
-    return await request(`/api/messages?channel=${encodeURIComponent(channelId)}`);
-  } catch (error) {
-    if (!error?.isNetworkError) throw error;
-    return [];
-  }
+  return request(`/api/messages?channel=${encodeURIComponent(channelId)}`);
 }
 
 export async function sendChannelMessage({ channelId, text, sender = "human" }) {

@@ -26,7 +26,7 @@ DuckDome gives you channels where you can mention agents, track whether they res
 
 ## Architecture
 
-```
+```text
 the-duck-dome/
 ├── apps/
 │   ├── web/          React UI (Vite)
@@ -117,8 +117,8 @@ The backend exposes a REST API at `http://localhost:8000`. Key endpoints:
 |--------|------|-------------|
 | `GET` | `/api/channels` | List channels |
 | `POST` | `/api/channels` | Create a channel |
-| `GET` | `/api/channels/{id}/messages` | List messages in a channel |
-| `POST` | `/api/channels/{id}/messages` | Send a message |
+| `GET` | `/api/messages?channel=...` | List messages in a channel |
+| `POST` | `/api/messages` | Send a message |
 | `POST` | `/api/runners/execute` | Execute next pending trigger |
 
 ## Roadmap
