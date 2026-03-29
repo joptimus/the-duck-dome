@@ -17,6 +17,8 @@ function createWindow() {
   win.loadURL(DEV_URL);
 }
 
+const { stopBackend } = require("./backend");
+
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {
@@ -29,4 +31,8 @@ app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
+});
+
+app.on("before-quit", () => {
+  stopBackend();
 });
