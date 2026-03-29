@@ -91,3 +91,12 @@ If you are about to:
 - expand scope
 
 STOP and do not proceed.
+
+### Legacy Reference Requirement
+
+Before implementing a feature:
+- check how it worked in the old repo
+- do not guess behavior
+- do not silently drop functionality
+
+If behavior is unclear, say so.

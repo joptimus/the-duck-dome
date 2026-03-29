@@ -1,10 +1,10 @@
-# .coderabbit.yaml
+# yaml-language-server: $schema=https://coderabbit.ai/integrations/schema.v2.json
 
 reviews:
   profile: "chill"
   request_changes_workflow: true
   high_level_summary: true
-  high_level_summary_placeholder: true
+  high_level_summary_placeholder: "auto"
   poem: false
   review_status: true
   collapse_walkthrough: false
@@ -40,43 +40,32 @@ path_filters:
 path_instructions:
   - path: "apps/web/**"
     instructions: |
-      This is the React frontend.
-      Focus review on:
-      - feature boundaries
-      - state management simplicity
-      - avoiding business logic inside presentational components
-      - avoiding unnecessary cross-feature coupling
-      - maintainability for a solo developer
-      Flag oversized components, duplicated UI logic, and unnecessary abstractions.
+      React frontend.
+      Flag:
+      - large components
+      - business logic in UI
+      - cross-feature coupling
+      - unnecessary abstractions
 
   - path: "apps/desktop/**"
     instructions: |
-      This is the Electron layer.
-      Focus review on:
-      - lifecycle safety
-      - minimal preload exposure
-      - avoiding product business logic in Electron
-      - safe backend process startup and shutdown
-      - avoiding architecture drift between desktop and web/backend
+      Electron layer.
+      Flag:
+      - business logic in Electron
+      - unsafe preload usage
+      - backend lifecycle issues
 
   - path: "backend/**"
     instructions: |
-      This is the Python backend.
-      Focus review on:
-      - thin route handlers
-      - business logic in services
-      - persistence isolated in store modules
-      - integration boundaries
-      - avoiding god modules, hidden globals, and oversized files
-      - avoiding path-sensitive imports and startup fragility
+      Python backend.
+      Flag:
+      - fat route handlers
+      - logic outside services
+      - global state
+      - oversized modules
+      - fragile imports
 
   - path: "scripts/**"
     instructions: |
-      These files are for development and build orchestration only.
-      Flag business logic, product logic, or permanent runtime behavior being placed here.
-
-  - path: "docs/**"
-    instructions: |
-      Review for clarity, consistency with current architecture, and whether the doc creates unnecessary process overhead for a solo developer.
-
-early_access: false
+      Dev/build scripts only.
+      Flag any product/business logic here.
