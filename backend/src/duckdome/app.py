@@ -98,6 +98,11 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     jobs_mod.init(job_service)
     websocket_mod.init(ws_manager)
 
+    # Expose services on app.state for MCP bridge wiring
+    app.state.message_service = message_service
+    app.state.rule_service = rule_service
+    app.state.trigger_service = trigger_service
+
     # Register routers
     app.include_router(health_router)
     app.include_router(messages_mod.router)

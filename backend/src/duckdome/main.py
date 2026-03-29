@@ -2,7 +2,7 @@
 
 Startup flow:
   1. FastAPI on :8000 (REST + WebSocket)
-  2. MCP on :8200 (HTTP transport, in background thread)
+  2. MCP on :8200 (HTTP transport, in background thread — started via lifespan)
 
 Agent config snippet (for Claude Code ~/.claude.json):
   {
@@ -17,27 +17,31 @@ Agent config snippet (for Claude Code ~/.claude.json):
 from __future__ import annotations
 
 import threading
+from contextlib import asynccontextmanager
 
-from duckdome.app import create_app
+from fastapi import FastAPI
+
+from duckdome.app import create_app as _create_app
 from duckdome.mcp.bridge import McpBridge
 from duckdome.mcp.transport import run_mcp_server
 
-app = create_app()
 
-# Create MCP bridge with services from the app
-# Services are initialized during create_app, access them via route modules
-from duckdome.routes import messages as messages_mod
-from duckdome.routes import rules as rules_mod
+@asynccontextmanager
+async def _lifespan(application: FastAPI):
+    """Start MCP transport on app startup, not on import."""
+    bridge = McpBridge(
+        message_service=application.state.message_service,
+        rule_service=application.state.rule_service,
+    )
+    mcp_thread = threading.Thread(
+        target=run_mcp_server,
+        args=(bridge,),
+        daemon=True,
+    )
+    mcp_thread.start()
+    yield
 
-_bridge = McpBridge(
-    message_service=messages_mod._service,
-    rule_service=rules_mod._service,
-)
 
-# Start MCP server in background thread
-_mcp_thread = threading.Thread(
-    target=run_mcp_server,
-    args=(_bridge,),
-    daemon=True,
-)
-_mcp_thread.start()
+_base_app = _create_app()
+_base_app.router.lifespan_context = _lifespan
+app = _base_app

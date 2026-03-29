@@ -9,15 +9,23 @@ Config: DUCKDOME_MCP_PORT env var (default: 8200).
 
 from __future__ import annotations
 
+import logging
 import os
 
 import uvicorn
 
 from duckdome.mcp.bridge import McpBridge
 
+logger = logging.getLogger(__name__)
+
 
 def get_mcp_port() -> int:
-    return int(os.environ.get("DUCKDOME_MCP_PORT", "8200"))
+    raw = os.environ.get("DUCKDOME_MCP_PORT", "8200")
+    try:
+        return int(raw)
+    except ValueError:
+        logger.warning("Invalid DUCKDOME_MCP_PORT=%r, using default 8200", raw)
+        return 8200
 
 
 def run_mcp_server(bridge: McpBridge, host: str = "127.0.0.1") -> None:
@@ -28,4 +36,8 @@ def run_mcp_server(bridge: McpBridge, host: str = "127.0.0.1") -> None:
     """
     port = get_mcp_port()
     mcp_app = bridge.mcp.streamable_http_app()
-    uvicorn.run(mcp_app, host=host, port=port, log_level="warning")
+    try:
+        logger.info("MCP transport starting on %s:%d", host, port)
+        uvicorn.run(mcp_app, host=host, port=port, log_level="warning")
+    except OSError as e:
+        logger.error("MCP transport failed to start on port %d: %s", port, e)
