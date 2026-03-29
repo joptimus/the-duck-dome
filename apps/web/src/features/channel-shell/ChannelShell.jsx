@@ -42,7 +42,7 @@ function normalizeAgents(data, channelId) {
     last_error: agent.last_error || null,
     open_trigger_count: Number.isFinite(Number(agent.open_trigger_count))
       ? Number(agent.open_trigger_count)
-      : 0,
+      : null,
   }));
 }
 
@@ -120,6 +120,23 @@ function computeOpenByAgent(triggers) {
   return counts;
 }
 
+function mergeRuntimeAgents(agents, openByAgent) {
+  return agents.map((agent) => {
+    const triggerDerivedCount = openByAgent[agent.agent_type];
+    const backendCount = Number(agent.open_trigger_count);
+    const open_trigger_count = Number.isFinite(triggerDerivedCount)
+      ? triggerDerivedCount
+      : Number.isFinite(backendCount)
+        ? backendCount
+        : 0;
+
+    return {
+      ...agent,
+      open_trigger_count,
+    };
+  });
+}
+
 export default function ChannelShell() {
   const [channels, setChannels] = useState([]);
   const [activeChannelId, setActiveChannelId] = useState(null);
@@ -127,8 +144,8 @@ export default function ChannelShell() {
   const [agents, setAgents] = useState([]);
   const [triggers, setTriggers] = useState([]);
   const [channelError, setChannelError] = useState(null);
-  const [agentsError, setAgentsError] = useState(null);
-  const [triggersError, setTriggersError] = useState(null);
+  const [agentError, setAgentError] = useState(null);
+  const [triggerError, setTriggerError] = useState(null);
   const [messagesError, setMessagesError] = useState(null);
   const [messagesByChannelId, setMessagesByChannelId] = useState(mockMessagesByChannelId);
   const [createOpen, setCreateOpen] = useState(false);
@@ -159,8 +176,8 @@ export default function ChannelShell() {
     setAgents([]);
     setTriggers([]);
     setChannelError(null);
-    setAgentsError(null);
-    setTriggersError(null);
+    setAgentError(null);
+    setTriggerError(null);
     setMessagesError(null);
     setRefreshTick(0);
     return undefined;
@@ -197,18 +214,18 @@ export default function ChannelShell() {
 
       if (agentsResult.status === "fulfilled") {
         setAgents(normalizeAgents(agentsResult.value, activeChannelId));
-        setAgentsError(null);
+        setAgentError(null);
       } else {
         setAgents([]);
-        setAgentsError("Runtime agent state unavailable");
+        setAgentError("Runtime agent state unavailable");
       }
 
       if (triggersResult.status === "fulfilled") {
         setTriggers(normalizeTriggers(triggersResult.value, activeChannelId));
-        setTriggersError(null);
+        setTriggerError(null);
       } else {
         setTriggers([]);
-        setTriggersError("Trigger data unavailable");
+        setTriggerError("Trigger data unavailable");
       }
 
       if (messagesResult.status === "fulfilled") {
@@ -235,20 +252,17 @@ export default function ChannelShell() {
   );
   const triggerSummary = useMemo(() => summarizeTriggers(triggers), [triggers]);
   const openByAgent = useMemo(() => computeOpenByAgent(triggers), [triggers]);
+  const mergedAgents = useMemo(() => mergeRuntimeAgents(agents, openByAgent), [agents, openByAgent]);
   const runtimeAgentMap = useMemo(() => {
     const map = {};
-    for (const agent of agents) {
-      const openTriggerCount = Number.isFinite(Number(agent.open_trigger_count))
-        ? Number(agent.open_trigger_count)
-        : openByAgent[agent.agent_type] || 0;
+    for (const agent of mergedAgents) {
       map[agent.agent_type] = {
         ...agent,
-        open_trigger_count: openTriggerCount,
       };
     }
     return map;
-  }, [agents, openByAgent]);
-  const hasRuntimeData = agents.length > 0 || triggers.length > 0;
+  }, [mergedAgents]);
+  const hasRuntimeData = mergedAgents.length > 0 || triggers.length > 0;
   const claudeRuntime = runtimeAgentMap.claude || null;
   const isClaudeWorking = claudeRuntime?.status === "working";
   const latestClaudeFailure = useMemo(() => {
@@ -297,8 +311,8 @@ export default function ChannelShell() {
       <main className="channel-shell-main">
         <ChannelHeader channel={showChannel} runtimeStrip={<AgentRuntimeStrip agentMap={runtimeAgentMap} />} />
         {channelError ? <div className="channel-header-error">{channelError}</div> : null}
-        <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={triggersError} />
-        <RuntimeDetailsPanel channelId={activeChannelId} agents={agents} error={agentsError} />
+        <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={triggerError} />
+        <RuntimeDetailsPanel channelId={activeChannelId} agents={mergedAgents} error={agentError} />
         <ChatShell
           channel={showChannel}
           messages={activeMessages}

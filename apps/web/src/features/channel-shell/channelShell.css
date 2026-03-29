@@ -118,6 +118,15 @@
   font-family: inherit;
 }
 
+.channel-header-error {
+  border: 1px solid #5e2f3a;
+  border-radius: 8px;
+  background: #2a141a;
+  color: #ff9ba8;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
 .runtime-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

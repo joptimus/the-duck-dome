@@ -81,11 +81,12 @@ def test_list_triggers_after_mention(client, channel_id):
     client.post("/api/agents/register", json={
         "channel_id": channel_id, "agent_type": "claude"
     })
-    client.post("/api/messages", json={
+    post_resp = client.post("/api/messages", json={
         "text": "@claude review this",
         "channel": channel_id,
         "sender": "human",
     })
+    assert post_resp.status_code == 201
     # Triggers are not auto-created from mentions yet
     resp = client.get("/api/triggers", params={"channel_id": channel_id})
     assert resp.status_code == 200
