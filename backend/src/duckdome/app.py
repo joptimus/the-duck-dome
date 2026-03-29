@@ -9,10 +9,13 @@ from duckdome.routes.health import router as health_router
 from duckdome.routes import messages as messages_mod
 from duckdome.routes import deliveries as deliveries_mod
 from duckdome.routes import channels as channels_mod
+from duckdome.routes import triggers as triggers_mod
 from duckdome.services.channel_service import ChannelService
 from duckdome.services.message_service import MessageService
+from duckdome.services.trigger_service import TriggerService
 from duckdome.stores.channel_store import ChannelStore
 from duckdome.stores.message_store import MessageStore
+from duckdome.stores.trigger_store import TriggerStore
 
 DEV_ORIGINS = [
     "http://localhost:5173",
@@ -36,6 +39,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     # Stores
     message_store = MessageStore(data_dir=data_dir)
     channel_store = ChannelStore(data_dir=data_dir)
+    trigger_store = TriggerStore(data_dir=data_dir)
 
     # Services
     channel_service = ChannelService(store=channel_store)
@@ -44,16 +48,22 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         known_agents=DEFAULT_AGENTS,
         channel_service=channel_service,
     )
+    trigger_service = TriggerService(
+        trigger_store=trigger_store,
+        channel_store=channel_store,
+    )
 
     # Init routes with dependencies
     messages_mod.init(message_service)
     deliveries_mod.init(message_service)
     channels_mod.init(channel_service)
+    triggers_mod.init(trigger_service)
 
     # Register routers
     app.include_router(health_router)
     app.include_router(messages_mod.router)
     app.include_router(deliveries_mod.router)
     app.include_router(channels_mod.router)
+    app.include_router(triggers_mod.router)
 
     return app
