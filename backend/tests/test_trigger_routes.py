@@ -76,44 +76,48 @@ def test_claim_empty(client, channel_id):
     assert resp.json()["trigger"] is None
 
 
-def test_full_trigger_lifecycle(client, channel_id):
+def test_list_triggers_after_mention(client, channel_id):
+    """Sending a @mention creates a delivery but not a trigger (triggers are separate)."""
+    client.post("/api/agents/register", json={
+        "channel_id": channel_id, "agent_type": "claude"
+    })
+    client.post("/api/messages", json={
+        "text": "@claude review this",
+        "channel": channel_id,
+        "sender": "human",
+    })
+    # Triggers are not auto-created from mentions yet
+    resp = client.get("/api/triggers", params={"channel_id": channel_id})
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+def test_claim_and_complete_via_api(client, channel_id):
+    """Full claim→complete lifecycle using a service-seeded trigger."""
+    from duckdome.routes import triggers as triggers_mod
+
     # Register agent
     client.post("/api/agents/register", json={
         "channel_id": channel_id, "agent_type": "claude"
     })
 
-    # Send a message with @mention to create a delivery (which creates a trigger)
-    # For now, create trigger directly via the service by sending a message
-    msg_resp = client.post("/api/messages", json={
-        "text": "@claude review this",
-        "channel": channel_id,
-        "sender": "human",
-    })
-    msg_id = msg_resp.json()["id"]
+    # Seed a trigger via the service (not yet wired to mentions)
+    svc = triggers_mod._service
+    svc.create_trigger(channel_id, "claude", "msg-1")
 
-    # List pending triggers (none yet — triggers are created separately)
-    resp = client.get("/api/triggers", params={"channel_id": channel_id})
-    assert resp.status_code == 200
-
-
-def test_claim_complete_lifecycle(client, channel_id):
-    # Register + create trigger manually via internal path
-    client.post("/api/agents/register", json={
+    # Claim
+    claim_resp = client.post("/api/triggers/claim", json={
         "channel_id": channel_id, "agent_type": "claude"
     })
+    assert claim_resp.status_code == 200
+    claimed = claim_resp.json()
+    assert claimed["status"] == "claimed"
+    trigger_id = claimed["id"]
 
-    # We need to create a trigger. Use the trigger service via the app.
-    # Send mention message first
-    msg_resp = client.post("/api/messages", json={
-        "text": "@claude help",
-        "channel": channel_id,
-        "sender": "human",
-    })
-
-    # For this test, we'll verify the API contract works end-to-end
-    # by checking agent status changes via channels API
-    agents_resp = client.get(f"/api/channels/{channel_id}/agents")
-    assert agents_resp.status_code == 200
+    # Complete
+    complete_resp = client.post(f"/api/triggers/{trigger_id}/complete")
+    assert complete_resp.status_code == 200
+    assert complete_resp.json()["status"] == "completed"
 
 
 def test_complete_nonexistent_trigger(client):
