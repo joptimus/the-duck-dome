@@ -104,6 +104,8 @@ class MessageService:
     ) -> list[Message]:
         """Mark all sent messages targeted at agent as delivered, up to read_up_to_id."""
         msgs = self._store.list_by_channel(channel)
+        if not any(m.id == read_up_to_id for m in msgs):
+            return []
         delivered: list[Message] = []
         for msg in msgs:
             d = self._get_delivery_for_agent(msg, agent_name)

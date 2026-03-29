@@ -12,7 +12,7 @@ Multi-channel chat	✅ Keep	Simplified channel UX	P0
 Message persistence	✅ Keep	Reliable + replayable timeline	P0
 🔥 Reliability Layer (NEW — Critical)
 Feature	Decision	DuckDome Version	Priority
-Message delivery tracking	🆕 Add	sent → received → read → responded	P0
+Message delivery tracking	🆕 Add	sent → delivered → acknowledged	P0
 Missed message detection	🆕 Add	flag ignored @mentions	P0
 Retry/escalation system	🆕 Add	resend or reassign tasks	P0
 Agent inbox / assignment	🆕 Add	explicit task ownership	P0

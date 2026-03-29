@@ -4,7 +4,7 @@ import time
 import uuid
 from enum import StrEnum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DeliveryState(StrEnum):
@@ -32,3 +32,9 @@ class Message(BaseModel):
     timestamp: float = Field(default_factory=time.time)
     delivery: Delivery | None = None
     deliveries: list[Delivery] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _check_delivery_exclusivity(self) -> Message:
+        if self.delivery is not None and self.deliveries:
+            raise ValueError("Message cannot have both 'delivery' and 'deliveries'")
+        return self

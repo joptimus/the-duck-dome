@@ -28,24 +28,24 @@ class SendMessageRequest(BaseModel):
 
 
 class AgentDeliveredRequest(BaseModel):
-    agent_name: str
+    agent_name: str = Field(min_length=1)
 
 
 class AgentAcknowledgedRequest(BaseModel):
-    agent_name: str
-    response_id: str
+    agent_name: str = Field(min_length=1)
+    response_id: str = Field(min_length=1)
 
 
 class AgentReadRequest(BaseModel):
-    agent_name: str
-    channel: str
-    read_up_to_id: str
+    agent_name: str = Field(min_length=1)
+    channel: str = Field(min_length=1)
+    read_up_to_id: str = Field(min_length=1)
 
 
 class AgentResponseRequest(BaseModel):
-    agent_name: str
-    channel: str
-    response_id: str
+    agent_name: str = Field(min_length=1)
+    channel: str = Field(min_length=1)
+    response_id: str = Field(min_length=1)
 
 
 @router.post("", status_code=201)
