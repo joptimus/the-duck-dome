@@ -213,8 +213,9 @@ export default function ChannelShell() {
 
       <main className="channel-shell-main">
         <ChannelHeader channel={activeChannel} runtimeStrip={<AgentRuntimeStrip agentMap={runtimeAgentMap} />} />
-        <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={channelError || triggerError} />
-        <RuntimeDetailsPanel channelId={activeChannelId} agents={mergedAgents} error={channelError || agentError} />
+        {channelError ? <div className="channel-header-error">{channelError}</div> : null}
+        <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={triggerError} />
+        <RuntimeDetailsPanel channelId={activeChannelId} agents={mergedAgents} error={agentError} />
         <ChatShell channel={activeChannel} messages={activeMessages} onSend={onSend} />
       </main>
 
