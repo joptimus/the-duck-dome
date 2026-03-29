@@ -86,8 +86,11 @@
 .channel-header {
   border: 1px solid #2a3a52;
   border-radius: 10px;
-  padding: 12px 14px;
+  padding: 12px;
   background: #0f1c2e;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .channel-header__main h1 {
@@ -106,47 +109,127 @@
   font-family: inherit;
 }
 
-.agent-row {
+.runtime-strip {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
 }
 
-.agent-pill {
+.runtime-pill {
   border: 1px solid #2a3a52;
   border-radius: 10px;
   padding: 10px;
   background: #101f34;
 }
 
-.agent-pill--online {
+.runtime-pill--idle {
   border-color: #2d905f;
 }
 
-.agent-pill--offline {
+.runtime-pill--offline {
   border-color: #5a6573;
 }
 
-.agent-pill--working {
+.runtime-pill--working {
   border-color: #4fa7ff;
   box-shadow: inset 0 0 20px #4fa7ff22;
 }
 
-.agent-pill__top {
+.runtime-pill__top {
   display: flex;
   justify-content: space-between;
   align-items: baseline;
   font-size: 12px;
 }
 
-.agent-pill__top strong {
+.runtime-pill__top strong {
   font-size: 14px;
 }
 
-.agent-pill__last {
-  margin-top: 6px;
+.runtime-pill__line {
+  margin-top: 4px;
   font-size: 11px;
   color: #9db1c8;
+}
+
+.runtime-pill__error {
+  margin-top: 4px;
+  font-size: 11px;
+  color: #ff9ba8;
+}
+
+.trigger-summary,
+.runtime-panel {
+  border: 1px solid #2a3a52;
+  border-radius: 10px;
+  padding: 12px 14px;
+  background: #0f1c2e;
+}
+
+.trigger-summary h3,
+.runtime-panel h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  color: #dce6f5;
+}
+
+.trigger-summary__grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.trigger-card {
+  border: 1px solid #2b3d57;
+  border-radius: 8px;
+  background: #12233a;
+  padding: 10px;
+}
+
+.trigger-card__label {
+  font-size: 12px;
+  color: #9db1c8;
+}
+
+.trigger-card__value {
+  margin-top: 6px;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.trigger-summary__empty,
+.runtime-panel__empty {
+  font-size: 13px;
+  color: #9db1c8;
+}
+
+.trigger-summary__error,
+.runtime-panel__error {
+  font-size: 13px;
+  color: #ff9ba8;
+}
+
+.runtime-panel__table-wrap {
+  overflow-x: auto;
+}
+
+.runtime-panel__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.runtime-panel__table th,
+.runtime-panel__table td {
+  text-align: left;
+  padding: 8px 6px;
+  border-bottom: 1px solid #24364f;
+  white-space: nowrap;
+}
+
+.runtime-panel__table th {
+  color: #9db1c8;
+  font-weight: 500;
 }
 
 .chat-shell {
@@ -287,7 +370,11 @@
     border-bottom: 1px solid #243349;
   }
 
-  .agent-row {
+  .runtime-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .trigger-summary__grid {
     grid-template-columns: 1fr;
   }
 }

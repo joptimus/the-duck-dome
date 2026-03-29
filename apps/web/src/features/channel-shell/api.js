@@ -1,4 +1,4 @@
-import { mockAgentsByChannelId, mockChannels } from "./mockData";
+import { mockAgentsByChannelId, mockChannels, mockTriggersByChannelId } from "./mockData";
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
@@ -68,5 +68,14 @@ export async function getChannelAgents(channelId) {
   } catch (error) {
     if (!error?.isNetworkError) throw error;
     return mockAgentsByChannelId[channelId] || [];
+  }
+}
+
+export async function getChannelTriggers(channelId) {
+  try {
+    return await request(`/api/channels/${encodeURIComponent(channelId)}/triggers`);
+  } catch (error) {
+    if (!error?.isNetworkError && error?.status !== 404) throw error;
+    return mockTriggersByChannelId[channelId] || [];
   }
 }
