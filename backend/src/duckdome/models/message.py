@@ -15,6 +15,11 @@ class DeliveryState(StrEnum):
     TIMEOUT = "timeout"
 
 
+class MessageType(StrEnum):
+    CHAT = "chat"
+    SYSTEM = "system"
+
+
 class Delivery(BaseModel):
     target: str
     state: DeliveryState = DeliveryState.SENT
@@ -29,6 +34,7 @@ class Message(BaseModel):
     text: str
     channel: str
     sender: str
+    type: MessageType = MessageType.CHAT
     timestamp: float = Field(default_factory=time.time)
     delivery: Delivery | None = None
     deliveries: list[Delivery] = Field(default_factory=list)
