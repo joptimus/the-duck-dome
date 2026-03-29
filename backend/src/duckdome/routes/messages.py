@@ -58,7 +58,7 @@ def send_message(body: SendMessageRequest):
 @router.get("")
 def list_messages(channel: str, after: str | None = None):
     svc = _get_service()
-    msgs = svc._store.list_by_channel(channel, after_id=after)
+    msgs = svc.list_messages(channel, after_id=after)
     return [m.model_dump() for m in msgs]
 
 

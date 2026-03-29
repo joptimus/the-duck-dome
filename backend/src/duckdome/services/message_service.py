@@ -128,3 +128,22 @@ class MessageService:
                 if updated:
                     acknowledged.append(updated)
         return acknowledged
+
+    def list_messages(
+        self, channel: str, after_id: str | None = None
+    ) -> list[Message]:
+        return self._store.list_by_channel(channel, after_id=after_id)
+
+    def list_by_delivery_state(self, state: str) -> list[Message]:
+        return self._store.list_by_delivery_state(state)
+
+    def list_open_deliveries(self) -> list[Message]:
+        sent = self._store.list_by_delivery_state("sent")
+        delivered = self._store.list_by_delivery_state("delivered")
+        seen: set[str] = set()
+        result: list[Message] = []
+        for msg in sent + delivered:
+            if msg.id not in seen:
+                seen.add(msg.id)
+                result.append(msg)
+        return result

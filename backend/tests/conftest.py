@@ -4,8 +4,8 @@ from duckdome.app import create_app
 
 
 @pytest.fixture
-def app():
-    return create_app()
+def app(tmp_path):
+    return create_app(data_dir=tmp_path)
 
 
 @pytest.fixture
