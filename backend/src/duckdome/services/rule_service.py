@@ -8,9 +8,19 @@ class RuleService:
     def __init__(self, store: RuleStore) -> None:
         self._store = store
 
+    def get(self, rule_id: str) -> Rule | None:
+        return self._store.get(rule_id)
+
     def propose(self, text: str, author: str | None = None, reason: str | None = None) -> Rule:
         rule = Rule(text=text, author=author, reason=reason)
         return self._store.add(rule)
+
+    def edit(self, rule_id: str, text: str) -> Rule | None:
+        rule = self._store.get(rule_id)
+        if rule is None:
+            return None
+        updated = rule.model_copy(update={"text": text})
+        return self._store.update(rule_id, updated)
 
     def activate(self, rule_id: str) -> Rule | None:
         rule = self._store.get(rule_id)

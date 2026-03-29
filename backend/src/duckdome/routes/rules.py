@@ -58,11 +58,7 @@ def propose_rule(body: ProposeRuleBody):
 @router.patch("/{rule_id}")
 def edit_rule(rule_id: str, body: EditRuleBody):
     svc = _get_service()
-    rule = svc._store.get(rule_id)
-    if rule is None:
-        raise HTTPException(status_code=404, detail="Rule not found")
-    updated = rule.model_copy(update={"text": body.text})
-    result = svc._store.update(rule_id, updated)
+    result = svc.edit(rule_id, text=body.text)
     if result is None:
         raise HTTPException(status_code=404, detail="Rule not found")
     return result.model_dump()
