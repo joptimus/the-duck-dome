@@ -86,7 +86,6 @@ function mergeRuntimeAgents(agents, openByAgent) {
     };
   });
 }
-
 export default function ChannelShell() {
   const [channels, setChannels] = useState([]);
   const [activeChannelId, setActiveChannelId] = useState(null);
