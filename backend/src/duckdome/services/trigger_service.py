@@ -43,6 +43,9 @@ class TriggerService:
         self, channel_id: str, agent_type: str
     ) -> Trigger | None:
         agent_id = f"{channel_id}:{agent_type}"
+        agent = self._channels.get_agent(agent_id)
+        if agent is None or agent.status == "offline":
+            return None
         pending = self._triggers.list_by_agent(agent_id, status="pending")
         if not pending:
             return None
@@ -52,11 +55,9 @@ class TriggerService:
         self._triggers.update(trigger.id, trigger)
 
         # Update agent status to working
-        agent = self._channels.get_agent(agent_id)
-        if agent:
-            agent.status = "working"
-            agent.current_task = trigger.source_message_id
-            self._channels.update_agent(agent_id, agent)
+        agent.status = "working"
+        agent.current_task = trigger.source_message_id
+        self._channels.update_agent(agent_id, agent)
 
         return trigger
 
@@ -122,6 +123,7 @@ class TriggerService:
             existing.status = "idle"
             existing.last_heartbeat = time.time()
             existing.last_error = None
+            existing.current_task = None
             self._channels.update_agent(agent_id, existing)
             return existing
         agent = AgentInstance(

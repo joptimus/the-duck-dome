@@ -30,6 +30,17 @@ def channel_with_agent(channel_store):
     return ch
 
 
+@pytest.fixture
+def channel_with_idle_agent(channel_store):
+    """Channel with an idle (claimable) agent."""
+    ch = Channel(name="general", type=ChannelType.GENERAL)
+    channel_store.add_channel(ch)
+    channel_store.add_agent(AgentInstance(
+        channel_id=ch.id, agent_type="claude", status="idle",
+    ))
+    return ch
+
+
 # --- Trigger creation ---
 
 def test_create_trigger(service, channel_with_agent):
@@ -74,8 +85,8 @@ def test_dedupe_same_trigger(service, channel_with_agent):
 
 # --- Trigger claim ---
 
-def test_claim_trigger(service, channel_with_agent, channel_store):
-    ch = channel_with_agent
+def test_claim_trigger(service, channel_with_idle_agent, channel_store):
+    ch = channel_with_idle_agent
     service.create_trigger(ch.id, "claude", "msg-1")
     claimed = service.claim_trigger(ch.id, "claude")
     assert claimed is not None
@@ -91,13 +102,22 @@ def test_claim_returns_none_when_empty(service, channel_with_agent):
     assert service.claim_trigger(channel_with_agent.id, "claude") is None
 
 
+def test_claim_rejected_when_agent_offline(service, channel_with_agent, channel_store):
+    ch = channel_with_agent
+    service.create_trigger(ch.id, "claude", "msg-1")
+    # Agent is offline by default (not registered via register_agent)
+    agent = channel_store.get_agent(f"{ch.id}:claude")
+    assert agent.status == "offline"
+    assert service.claim_trigger(ch.id, "claude") is None
+
+
 def test_claim_is_channel_scoped(service, channel_store):
     ch1 = Channel(name="ch-a", type=ChannelType.GENERAL)
     ch2 = Channel(name="ch-b", type=ChannelType.GENERAL)
     channel_store.add_channel(ch1)
     channel_store.add_channel(ch2)
-    channel_store.add_agent(AgentInstance(channel_id=ch1.id, agent_type="claude"))
-    channel_store.add_agent(AgentInstance(channel_id=ch2.id, agent_type="claude"))
+    channel_store.add_agent(AgentInstance(channel_id=ch1.id, agent_type="claude", status="idle"))
+    channel_store.add_agent(AgentInstance(channel_id=ch2.id, agent_type="claude", status="idle"))
 
     service.create_trigger(ch1.id, "claude", "msg-1")
 
@@ -109,8 +129,8 @@ def test_claim_is_channel_scoped(service, channel_store):
 
 # --- Trigger complete ---
 
-def test_complete_trigger(service, channel_with_agent, channel_store):
-    ch = channel_with_agent
+def test_complete_trigger(service, channel_with_idle_agent, channel_store):
+    ch = channel_with_idle_agent
     service.create_trigger(ch.id, "claude", "msg-1")
     claimed = service.claim_trigger(ch.id, "claude")
     completed = service.complete_trigger(claimed.id)
@@ -130,8 +150,8 @@ def test_complete_unclaimed_returns_none(service, channel_with_agent):
 
 # --- Trigger fail ---
 
-def test_fail_trigger(service, channel_with_agent, channel_store):
-    ch = channel_with_agent
+def test_fail_trigger(service, channel_with_idle_agent, channel_store):
+    ch = channel_with_idle_agent
     service.create_trigger(ch.id, "claude", "msg-1")
     claimed = service.claim_trigger(ch.id, "claude")
     failed = service.fail_trigger(claimed.id, "agent crashed")
