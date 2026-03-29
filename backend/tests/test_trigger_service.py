@@ -96,6 +96,7 @@ def test_claim_trigger(service, channel_with_idle_agent, channel_store):
     # Agent should be working
     agent = channel_store.get_agent(f"{ch.id}:claude")
     assert agent.status == "working"
+    assert agent.current_task == "msg-1"
 
 
 def test_claim_returns_none_when_empty(service, channel_with_agent):
@@ -140,6 +141,7 @@ def test_complete_trigger(service, channel_with_idle_agent, channel_store):
     agent = channel_store.get_agent(f"{ch.id}:claude")
     assert agent.status == "idle"
     assert agent.last_response is not None
+    assert agent.current_task is None
 
 
 def test_complete_unclaimed_returns_none(service, channel_with_agent):
@@ -161,6 +163,7 @@ def test_fail_trigger(service, channel_with_idle_agent, channel_store):
     agent = channel_store.get_agent(f"{ch.id}:claude")
     assert agent.status == "idle"
     assert agent.last_error == "agent crashed"
+    assert agent.current_task is None
 
 
 # --- List triggers ---

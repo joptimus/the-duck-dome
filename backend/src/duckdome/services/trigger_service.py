@@ -44,7 +44,7 @@ class TriggerService:
     ) -> Trigger | None:
         agent_id = f"{channel_id}:{agent_type}"
         agent = self._channels.get_agent(agent_id)
-        if agent is None or agent.status == "offline":
+        if agent is None or agent.status != "idle":
             return None
         pending = self._triggers.list_by_agent(agent_id, status="pending")
         if not pending:
