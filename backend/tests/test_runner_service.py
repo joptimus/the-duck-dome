@@ -4,7 +4,7 @@ import pytest
 from duckdome.models.channel import Channel, ChannelType, AgentInstance
 from duckdome.models.message import Message
 from duckdome.models.trigger import Trigger, TriggerStatus
-from duckdome.runner.claude import RunResult
+from duckdome.runner.base import RunResult
 from duckdome.services.channel_service import ChannelService
 from duckdome.services.message_service import MessageService
 from duckdome.services.trigger_service import TriggerService
@@ -52,13 +52,13 @@ def setup_channel(services, all_stores):
     return ch, msg
 
 
-@patch("duckdome.services.runner_service.claude_execute")
+@patch("duckdome.services.runner_service.get_executor")
 def test_execute_next_success(mock_exec, services, setup_channel, all_stores):
     _, _, _, runner_svc = services
-    ch, msg = setup_channel
+    ch, _msg = setup_channel
     cs, ms, _ = all_stores
 
-    mock_exec.return_value = RunResult(
+    mock_exec.return_value.execute.return_value = RunResult(
         stdout="Here is my answer", stderr="", exit_code=0, duration_ms=500,
     )
 
@@ -77,13 +77,13 @@ def test_execute_next_success(mock_exec, services, setup_channel, all_stores):
     assert agent.status == "idle"
 
 
-@patch("duckdome.services.runner_service.claude_execute")
+@patch("duckdome.services.runner_service.get_executor")
 def test_execute_next_failure(mock_exec, services, setup_channel, all_stores):
     _, _, _, runner_svc = services
     ch, _ = setup_channel
     cs, _, _ = all_stores
 
-    mock_exec.return_value = RunResult(
+    mock_exec.return_value.execute.return_value = RunResult(
         stdout="", stderr="model error", exit_code=1, duration_ms=200,
     )
 
@@ -106,12 +106,12 @@ def test_execute_next_no_triggers(services):
     assert run is None
 
 
-@patch("duckdome.services.runner_service.claude_execute")
+@patch("duckdome.services.runner_service.get_executor")
 def test_execute_next_exception(mock_exec, services, setup_channel):
     _, _, _, runner_svc = services
     ch, _ = setup_channel
 
-    mock_exec.side_effect = RuntimeError("unexpected crash")
+    mock_exec.return_value.execute.side_effect = RuntimeError("unexpected crash")
 
     run = runner_svc.execute_next(ch.id, "claude")
     assert run is not None

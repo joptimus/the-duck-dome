@@ -5,7 +5,8 @@ import time
 from duckdome.models.run import RunRecord
 from duckdome.models.trigger import Trigger
 from duckdome.runner.context import build_context, RunContext
-from duckdome.runner.claude import execute as claude_execute, RunResult
+from duckdome.runner.base import RunResult
+from duckdome.runner.factory import get_executor
 from duckdome.services.trigger_service import TriggerService
 from duckdome.services.message_service import MessageService
 from duckdome.stores.base import BaseChannelStore
@@ -46,7 +47,7 @@ class RunnerService:
             ctx = build_context(trigger, self._channels, self._msg_store)
 
             # 3. Execute
-            result = claude_execute(ctx)
+            result = get_executor(agent_type).execute(ctx)
 
             run.ended_at = time.time()
             run.duration_ms = result.duration_ms
