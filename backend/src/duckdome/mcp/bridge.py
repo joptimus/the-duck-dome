@@ -19,6 +19,7 @@ from mcp.server.fastmcp import FastMCP
 from duckdome.mcp.cursor_store import CursorStore
 from duckdome.mcp.identity import SessionIdentityStore
 from duckdome.services.message_service import MessageService
+from duckdome.services.rule_service import RuleService
 from duckdome.services.trigger_service import TriggerService
 
 
@@ -32,9 +33,11 @@ class McpBridge:
         self,
         message_service: MessageService,
         trigger_service: TriggerService,
+        rule_service: RuleService | None = None,
     ) -> None:
         self._message_service = message_service
         self._trigger_service = trigger_service
+        self._rule_service = rule_service
         self._cursor_store = CursorStore()
         self._identity_store = SessionIdentityStore()
         self._mcp = FastMCP("duckdome")
@@ -136,4 +139,22 @@ class McpBridge:
                     "time": msg.timestamp,
                 })
 
+            return json.dumps(result, ensure_ascii=False)
+
+        @self._mcp.tool()
+        def chat_rules() -> str:
+            """List active rules. Agents should check and follow these."""
+            if self._rule_service is None:
+                return "Error: rules service not available."
+            rules = self._rule_service.list_active()
+            if not rules:
+                return "No active rules."
+            result = []
+            for rule in rules:
+                result.append({
+                    "id": rule.id,
+                    "text": rule.text,
+                    "author": rule.author,
+                    "status": rule.status,
+                })
             return json.dumps(result, ensure_ascii=False)
