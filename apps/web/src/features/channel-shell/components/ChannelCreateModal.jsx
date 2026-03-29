@@ -9,10 +9,12 @@ const initialForm = {
 
 export default function ChannelCreateModal({ open, onClose, onCreate }) {
   const [form, setForm] = useState(initialForm);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   useEffect(() => {
     if (open) {
       setForm(initialForm);
+      setIsSubmitting(false);
     }
   }, [open]);
 
@@ -21,14 +23,19 @@ export default function ChannelCreateModal({ open, onClose, onCreate }) {
   const isRepo = form.type === ChannelType.REPO;
   const canCreate = form.name.trim().length > 0 && (!isRepo || form.repoPath.trim().length > 0);
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
-    if (!canCreate) return;
-    onCreate({
-      type: form.type,
-      name: form.name.trim(),
-      repo_path: isRepo ? form.repoPath.trim() : null,
-    });
+    if (!canCreate || isSubmitting) return;
+    setIsSubmitting(true);
+    try {
+      await onCreate({
+        type: form.type,
+        name: form.name.trim(),
+        repo_path: isRepo ? form.repoPath.trim() : null,
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -43,6 +50,7 @@ export default function ChannelCreateModal({ open, onClose, onCreate }) {
               <label>
                 <input
                   type="radio"
+                  name="channel-type"
                   checked={form.type === ChannelType.GENERAL}
                   onChange={() => setForm((prev) => ({ ...prev, type: ChannelType.GENERAL }))}
                 />
@@ -51,6 +59,7 @@ export default function ChannelCreateModal({ open, onClose, onCreate }) {
               <label>
                 <input
                   type="radio"
+                  name="channel-type"
                   checked={form.type === ChannelType.REPO}
                   onChange={() => setForm((prev) => ({ ...prev, type: ChannelType.REPO }))}
                 />
@@ -82,11 +91,11 @@ export default function ChannelCreateModal({ open, onClose, onCreate }) {
           ) : null}
 
           <div className="channel-form__actions">
-            <button type="button" onClick={onClose} className="button button--ghost">
+            <button type="button" onClick={onClose} disabled={isSubmitting} className="button button--ghost">
               Cancel
             </button>
-            <button type="submit" disabled={!canCreate} className="button button--primary">
-              Create
+            <button type="submit" disabled={!canCreate || isSubmitting} className="button button--primary">
+              {isSubmitting ? "Creating..." : "Create"}
             </button>
           </div>
         </form>

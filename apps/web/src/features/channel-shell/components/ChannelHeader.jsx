@@ -15,8 +15,12 @@ export default function ChannelHeader({ channel }) {
         <h1>
           {channel.type === "repo" ? "▣" : "#"} {channel.name}
         </h1>
-        {channel.type === "repo" && channel.repo_path ? (
-          <p className="channel-header__repo-path">{channel.repo_path}</p>
+        {channel.type === "repo" ? (
+          channel.repo_path ? (
+            <p className="channel-header__repo-path">{channel.repo_path}</p>
+          ) : (
+            <p className="channel-header__repo-path channel-header__repo-path--muted">Repository channel</p>
+          )
         ) : (
           <p className="channel-header__repo-path channel-header__repo-path--muted">General channel</p>
         )}

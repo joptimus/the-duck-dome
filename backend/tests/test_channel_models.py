@@ -24,11 +24,20 @@ def test_repo_channel():
 def test_repo_channel_requires_repo_path():
     with pytest.raises(ValueError, match="repo_path"):
         Channel(name="bad", type=ChannelType.REPO)
+    with pytest.raises(ValueError, match="repo_path"):
+        Channel(name="bad", type=ChannelType.REPO, repo_path="   ")
 
 
 def test_general_channel_rejects_repo_path():
     with pytest.raises(ValueError, match="repo_path"):
         Channel(name="bad", type=ChannelType.GENERAL, repo_path="/some/path")
+
+
+def test_channel_rejects_blank_name():
+    with pytest.raises(ValueError, match="name"):
+        Channel(name="", type=ChannelType.GENERAL)
+    with pytest.raises(ValueError, match="name"):
+        Channel(name="   ", type=ChannelType.GENERAL)
 
 
 def test_agent_instance():

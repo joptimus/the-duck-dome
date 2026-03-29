@@ -15,7 +15,7 @@ function normalizeChannels(data) {
     name: item.name || "channel",
     type: item.type === "repo" ? "repo" : "general",
     repo_path: item.repo_path || null,
-    unread_count: Number(item.unread_count || 0),
+    unread_count: Number.isFinite(Number(item.unread_count)) ? Number(item.unread_count) : 0,
   }));
 }
 

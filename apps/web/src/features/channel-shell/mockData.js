@@ -6,7 +6,7 @@ export const mockChannels = [
     id: "ch-duckdome",
     name: "duckdome-ui",
     type: ChannelType.REPO,
-    repo_path: "/Users/james/DevApps/the-duck-dome",
+    repo_path: "./the-duck-dome",
     unread_count: 2,
   },
 ];

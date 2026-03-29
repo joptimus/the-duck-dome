@@ -11,7 +11,13 @@ export default function SidebarChannelList({ channels, activeChannelId, onSelect
     <aside className="channel-sidebar">
       <div className="channel-sidebar__header">
         <h2>Channels</h2>
-        <button type="button" className="channel-sidebar__create" onClick={onOpenCreate}>
+        <button
+          type="button"
+          className="channel-sidebar__create"
+          onClick={onOpenCreate}
+          aria-label="Create channel"
+          title="Create channel"
+        >
           +
         </button>
       </div>

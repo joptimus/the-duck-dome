@@ -1,19 +1,34 @@
 import { mockAgentsByChannelId, mockChannels } from "./mockData";
 
-const API_BASE = "http://localhost:8000";
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
 async function request(path, options) {
-  const response = await fetch(`${API_BASE}${path}`, options);
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`);
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, options);
+  } catch (error) {
+    const networkError = error instanceof Error ? error : new Error("Network request failed");
+    networkError.isNetworkError = true;
+    throw networkError;
   }
+
+  if (!response.ok) {
+    const bodyText = await response.text();
+    const httpError = new Error(`Request failed: ${response.status}${bodyText ? ` - ${bodyText}` : ""}`);
+    httpError.status = response.status;
+    httpError.body = bodyText;
+    httpError.isNetworkError = false;
+    throw httpError;
+  }
+
   return response.json();
 }
 
 export async function getChannels() {
   try {
     return await request("/api/channels");
-  } catch (_error) {
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
     return mockChannels;
   }
 }
@@ -25,7 +40,8 @@ export async function createChannel(payload) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
-  } catch (_error) {
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
     const id = `local-${Date.now()}`;
     return {
       id,
@@ -40,7 +56,8 @@ export async function createChannel(payload) {
 export async function getChannel(channelId) {
   try {
     return await request(`/api/channels/${encodeURIComponent(channelId)}`);
-  } catch (_error) {
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
     return mockChannels.find((channel) => channel.id === channelId) || null;
   }
 }
@@ -48,7 +65,8 @@ export async function getChannel(channelId) {
 export async function getChannelAgents(channelId) {
   try {
     return await request(`/api/channels/${encodeURIComponent(channelId)}/agents`);
-  } catch (_error) {
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
     return mockAgentsByChannelId[channelId] || [];
   }
 }

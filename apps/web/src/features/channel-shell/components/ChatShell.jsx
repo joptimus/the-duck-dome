@@ -5,12 +5,16 @@ export default function ChatShell({ channel, messages, onSend }) {
 
   const sortedMessages = useMemo(() => messages || [], [messages]);
 
-  const submit = (event) => {
+  const submit = async (event) => {
     event.preventDefault();
     const text = draft.trim();
     if (!text) return;
-    onSend(text);
-    setDraft("");
+    try {
+      await onSend(text);
+      setDraft("");
+    } catch (_error) {
+      // Keep draft content intact when send fails.
+    }
   };
 
   return (
