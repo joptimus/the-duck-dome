@@ -142,10 +142,11 @@ class MessageService:
     def list_open_deliveries(self) -> list[Message]:
         sent = self._store.list_by_delivery_state("sent")
         seen = self._store.list_by_delivery_state("seen")
-        seen_ids: set[str] = set()
+        timed_out = self._store.list_by_delivery_state("timeout")
+        dedup: set[str] = set()
         result: list[Message] = []
-        for msg in sent + seen:
-            if msg.id not in seen_ids:
-                seen_ids.add(msg.id)
+        for msg in sent + seen + timed_out:
+            if msg.id not in dedup:
+                dedup.add(msg.id)
                 result.append(msg)
         return result
