@@ -31,6 +31,7 @@ async def _lifespan(application: FastAPI):
     """Start MCP transport on app startup, not on import."""
     bridge = McpBridge(
         message_service=application.state.message_service,
+        trigger_service=application.state.trigger_service,
         rule_service=application.state.rule_service,
     )
     mcp_thread = threading.Thread(

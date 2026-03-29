@@ -37,7 +37,7 @@ def test_port_out_of_range_zero():
 def test_bridge_creates_streamable_http_app(tmp_path):
     store = MessageStore(data_dir=tmp_path)
     svc = MessageService(store=store, known_agents=["claude"])
-    bridge = McpBridge(message_service=svc)
+    bridge = McpBridge(message_service=svc, trigger_service=MagicMock())
     mcp_app = bridge.mcp.streamable_http_app()
     assert mcp_app is not None
     assert callable(mcp_app)
@@ -47,7 +47,7 @@ def test_bridge_creates_streamable_http_app(tmp_path):
 def test_run_mcp_server_calls_uvicorn(mock_uvicorn, tmp_path):
     store = MessageStore(data_dir=tmp_path)
     svc = MessageService(store=store, known_agents=["claude"])
-    bridge = McpBridge(message_service=svc)
+    bridge = McpBridge(message_service=svc, trigger_service=MagicMock())
 
     with patch.dict(os.environ, {"DUCKDOME_MCP_PORT": "9999"}):
         run_mcp_server(bridge, host="0.0.0.0")
@@ -63,7 +63,7 @@ def test_run_mcp_server_calls_uvicorn(mock_uvicorn, tmp_path):
 def test_run_mcp_server_handles_port_conflict(mock_uvicorn, tmp_path):
     store = MessageStore(data_dir=tmp_path)
     svc = MessageService(store=store, known_agents=["claude"])
-    bridge = McpBridge(message_service=svc)
+    bridge = McpBridge(message_service=svc, trigger_service=MagicMock())
 
     mock_uvicorn.run.side_effect = OSError("Address already in use")
     # Should not raise — error is logged
