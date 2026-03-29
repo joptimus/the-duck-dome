@@ -21,16 +21,16 @@ def _get_service() -> JobService:
 
 
 class CreateJobBody(BaseModel):
-    title: str = Field(min_length=1)
-    body: str = ""
+    title: str = Field(min_length=1, max_length=120)
+    body: str = Field(default="", max_length=1000)
     channel: str = Field(min_length=1)
     assignee: str | None = None
     created_by: str = Field(min_length=1)
 
 
 class UpdateJobBody(BaseModel):
-    title: str | None = None
-    body: str | None = None
+    title: str | None = Field(default=None, min_length=1, max_length=120)
+    body: str | None = Field(default=None, max_length=1000)
     status: str | None = None
     assignee: str | None = None
 

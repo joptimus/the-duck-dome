@@ -113,6 +113,31 @@ def test_job_messages_roundtrip(client: TestClient):
     assert messages[0]["id"] == msg["id"]
 
 
+def test_create_job_rejects_oversized_title_and_body(client: TestClient):
+    too_long_title = "x" * 121
+    resp_title = client.post(
+        "/api/jobs",
+        json={
+            "title": too_long_title,
+            "channel": "general",
+            "created_by": "human",
+        },
+    )
+    assert resp_title.status_code == 422
+
+    too_long_body = "x" * 1001
+    resp_body = client.post(
+        "/api/jobs",
+        json={
+            "title": "ok",
+            "body": too_long_body,
+            "channel": "general",
+            "created_by": "human",
+        },
+    )
+    assert resp_body.status_code == 422
+
+
 def test_websocket_broadcasts_job_changes(app):
     with TestClient(app) as client:
         with client.websocket_connect("/ws") as ws:
@@ -146,8 +171,3 @@ def test_websocket_broadcasts_job_changes(app):
             assert event2["type"] == "job_message_added"
             assert event2["job_id"] == job_id
             assert event2["message"]["text"] == "Please prioritize this"
-
-            event3 = ws.receive_json()
-            assert event3["type"] == "job_updated"
-            assert event3["job"]["id"] == job_id
-            assert len(event3["job"]["messages"]) == 1

@@ -122,5 +122,4 @@ class JobService:
         self._broadcast(
             {"type": JOB_MESSAGE_ADDED, "job_id": job_id, "message": message}
         )
-        self._broadcast({"type": JOB_UPDATED, "job": job.model_dump(mode="json")})
         return message
