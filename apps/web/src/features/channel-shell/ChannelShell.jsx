@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { createChannel, getChannel, getChannelAgents, getChannels, getChannelTriggers } from "./api";
+import {
+  createChannel,
+  getChannel,
+  getChannelAgents,
+  getChannelMessages,
+  getChannels,
+  getChannelTriggers,
+  sendChannelMessage,
+} from "./api";
 import { mockMessagesByChannelId } from "./mockData";
 import AgentRuntimeStrip from "./components/AgentRuntimeStrip";
 import ChannelCreateModal from "./components/ChannelCreateModal";
@@ -38,6 +46,21 @@ function normalizeAgents(data, channelId) {
   }));
 }
 
+function formatClockTime(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return new Date(value * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+  if (typeof value === "string") {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber)) {
+      return new Date(asNumber * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    }
+    return value;
+  }
+  return "--";
+}
+
 function normalizeTriggers(data, channelId) {
   if (!Array.isArray(data)) return [];
   return data.map((trigger, index) => ({
@@ -45,18 +68,45 @@ function normalizeTriggers(data, channelId) {
     channel_id: trigger.channel_id || channelId || "",
     target: String(trigger.target || trigger.agent_type || "").toLowerCase(),
     state: String(trigger.state || "pending").toLowerCase(),
+    last_error: trigger.last_error || null,
+    created_at: trigger.created_at || null,
+    completed_at: trigger.completed_at || null,
   }));
+}
+
+function normalizeMessages(data, channelId) {
+  if (!Array.isArray(data)) return [];
+  return data.map((message, index) => {
+    const senderRaw = String(message.sender || "system");
+    const senderLower = senderRaw.toLowerCase();
+    const isAssistant = senderLower === "claude" || senderLower === "codex" || senderLower === "gemini";
+    const sender =
+      senderLower === "human"
+        ? "You"
+        : senderLower === "system"
+          ? "System"
+          : senderRaw.slice(0, 1).toUpperCase() + senderRaw.slice(1);
+
+    return {
+      id: message.id || `${channelId || "channel"}-msg-${index}`,
+      sender,
+      sender_type: isAssistant ? "assistant" : senderLower === "system" ? "system" : "user",
+      text: message.text || "",
+      time: formatClockTime(message.timestamp || message.time),
+    };
+  });
 }
 
 function summarizeTriggers(triggers) {
   return triggers.reduce(
     (acc, trigger) => {
       if (trigger.state === "pending") acc.pending += 1;
-      if (trigger.state === "claimed") acc.claimed += 1;
+      if (trigger.state === "claimed" || trigger.state === "working") acc.working += 1;
+      if (trigger.state === "completed") acc.completed += 1;
       if (trigger.state === "failed") acc.failed += 1;
       return acc;
     },
-    { pending: 0, claimed: 0, failed: 0 },
+    { pending: 0, working: 0, completed: 0, failed: 0 },
   );
 }
 
@@ -76,9 +126,13 @@ export default function ChannelShell() {
   const [activeChannel, setActiveChannel] = useState(null);
   const [agents, setAgents] = useState([]);
   const [triggers, setTriggers] = useState([]);
-  const [runtimeError, setRuntimeError] = useState(null);
+  const [channelError, setChannelError] = useState(null);
+  const [agentsError, setAgentsError] = useState(null);
+  const [triggersError, setTriggersError] = useState(null);
+  const [messagesError, setMessagesError] = useState(null);
   const [messagesByChannelId, setMessagesByChannelId] = useState(mockMessagesByChannelId);
   const [createOpen, setCreateOpen] = useState(false);
+  const [refreshTick, setRefreshTick] = useState(0);
 
   useEffect(() => {
     let ignore = false;
@@ -99,37 +153,73 @@ export default function ChannelShell() {
   }, []);
 
   useEffect(() => {
+    if (!activeChannelId) return undefined;
+
+    setActiveChannel(null);
+    setAgents([]);
+    setTriggers([]);
+    setChannelError(null);
+    setAgentsError(null);
+    setTriggersError(null);
+    setMessagesError(null);
+    setRefreshTick(0);
+    return undefined;
+  }, [activeChannelId]);
+
+  useEffect(() => {
+    if (!activeChannelId) return undefined;
+    const timer = setInterval(() => {
+      setRefreshTick((tick) => tick + 1);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [activeChannelId]);
+
+  useEffect(() => {
     let ignore = false;
     if (!activeChannelId) return undefined;
 
     async function loadChannelContext() {
-      setRuntimeError(null);
-      const [channelResult, agentsResult, triggersResult] = await Promise.allSettled([
+      const [channelResult, agentsResult, triggersResult, messagesResult] = await Promise.allSettled([
         getChannel(activeChannelId),
         getChannelAgents(activeChannelId),
         getChannelTriggers(activeChannelId),
+        getChannelMessages(activeChannelId),
       ]);
       if (ignore) return;
 
       if (channelResult.status === "fulfilled") {
         setActiveChannel(channelResult.value);
+        setChannelError(null);
       } else {
         setActiveChannel(null);
-        setRuntimeError("Backend unavailable");
+        setChannelError("Channel metadata unavailable");
       }
 
       if (agentsResult.status === "fulfilled") {
         setAgents(normalizeAgents(agentsResult.value, activeChannelId));
+        setAgentsError(null);
       } else {
         setAgents([]);
-        setRuntimeError("Runtime agent state unavailable");
+        setAgentsError("Runtime agent state unavailable");
       }
 
       if (triggersResult.status === "fulfilled") {
         setTriggers(normalizeTriggers(triggersResult.value, activeChannelId));
+        setTriggersError(null);
       } else {
         setTriggers([]);
-        setRuntimeError("Trigger data unavailable");
+        setTriggersError("Trigger data unavailable");
+      }
+
+      if (messagesResult.status === "fulfilled") {
+        const normalized = normalizeMessages(messagesResult.value, activeChannelId);
+        setMessagesByChannelId((prev) => ({
+          ...prev,
+          [activeChannelId]: normalized,
+        }));
+        setMessagesError(null);
+      } else {
+        setMessagesError("Messages unavailable");
       }
     }
 
@@ -137,7 +227,7 @@ export default function ChannelShell() {
     return () => {
       ignore = true;
     };
-  }, [activeChannelId]);
+  }, [activeChannelId, refreshTick]);
 
   const activeMessages = useMemo(
     () => (activeChannelId ? messagesByChannelId[activeChannelId] || [] : []),
@@ -159,6 +249,19 @@ export default function ChannelShell() {
     return map;
   }, [agents, openByAgent]);
   const hasRuntimeData = agents.length > 0 || triggers.length > 0;
+  const claudeRuntime = runtimeAgentMap.claude || null;
+  const isClaudeWorking = claudeRuntime?.status === "working";
+  const latestClaudeFailure = useMemo(() => {
+    const failed = triggers
+      .filter((trigger) => trigger.target === "claude" && trigger.state === "failed" && trigger.last_error)
+      .sort((a, b) => Number(b.completed_at || b.created_at || 0) - Number(a.completed_at || a.created_at || 0));
+    if (failed.length === 0) return null;
+    const text = String(failed[0].last_error || "")
+      .replace(/traceback[\s\S]*/i, "")
+      .split("\n")[0]
+      .trim();
+    return text ? text.slice(0, 180) : "Runner error";
+  }, [triggers]);
 
   const onCreate = async (payload) => {
     const created = await createChannel(payload);
@@ -170,17 +273,17 @@ export default function ChannelShell() {
 
   const onSend = (text) => {
     if (!activeChannelId) return;
-    const entry = {
-      id: `local-msg-${Date.now()}`,
-      sender: "You",
-      text,
-      time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
-    };
-    setMessagesByChannelId((prev) => ({
-      ...prev,
-      [activeChannelId]: [...(prev[activeChannelId] || []), entry],
-    }));
+    return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" })
+      .then(() => {
+        setRefreshTick((tick) => tick + 1);
+      })
+      .catch((error) => {
+        setMessagesError(error instanceof Error ? error.message : "Failed to send message");
+        throw error;
+      });
   };
+
+  const showChannel = activeChannel || channels.find((channel) => channel.id === activeChannelId) || null;
 
   return (
     <div className="channel-shell-layout">
@@ -192,10 +295,18 @@ export default function ChannelShell() {
       />
 
       <main className="channel-shell-main">
-        <ChannelHeader channel={activeChannel} runtimeStrip={<AgentRuntimeStrip agentMap={runtimeAgentMap} />} />
-        <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={runtimeError} />
-        <RuntimeDetailsPanel channelId={activeChannelId} agents={agents} error={runtimeError} />
-        <ChatShell channel={activeChannel} messages={activeMessages} onSend={onSend} />
+        <ChannelHeader channel={showChannel} runtimeStrip={<AgentRuntimeStrip agentMap={runtimeAgentMap} />} />
+        {channelError ? <div className="channel-header-error">{channelError}</div> : null}
+        <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={triggersError} />
+        <RuntimeDetailsPanel channelId={activeChannelId} agents={agents} error={agentsError} />
+        <ChatShell
+          channel={showChannel}
+          messages={activeMessages}
+          onSend={onSend}
+          messageError={messagesError}
+          claudeWorking={isClaudeWorking}
+          claudeFailure={latestClaudeFailure}
+        />
       </main>
 
       <ChannelCreateModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={onCreate} />

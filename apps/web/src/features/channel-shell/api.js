@@ -75,7 +75,35 @@ export async function getChannelTriggers(channelId) {
   try {
     return await request(`/api/channels/${encodeURIComponent(channelId)}/triggers`);
   } catch (error) {
-    if (!error?.isNetworkError && error?.status !== 404) throw error;
+    if (error?.isNetworkError) return mockTriggersByChannelId[channelId] || [];
+    if (error?.status !== 404) throw error;
+  }
+
+  try {
+    return await request(`/api/triggers?channel_id=${encodeURIComponent(channelId)}`);
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
     return mockTriggersByChannelId[channelId] || [];
   }
+}
+
+export async function getChannelMessages(channelId) {
+  try {
+    return await request(`/api/messages?channel=${encodeURIComponent(channelId)}`);
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
+    return [];
+  }
+}
+
+export async function sendChannelMessage({ channelId, text, sender = "human" }) {
+  return request("/api/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      text,
+      channel: channelId,
+      sender,
+    }),
+  });
 }

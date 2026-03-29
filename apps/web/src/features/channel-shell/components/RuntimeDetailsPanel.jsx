@@ -1,4 +1,4 @@
-export default function RuntimeDetailsPanel({ channelId, agents, error }) {
+export default function RuntimeDetailsPanel({ channelId, agents = [], error }) {
   return (
     <section className="runtime-panel" aria-label="Runtime details">
       <h3>Runtime Details</h3>
