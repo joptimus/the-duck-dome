@@ -21,10 +21,18 @@ class Channel(BaseModel):
 
     @model_validator(mode="after")
     def _validate_repo_path(self) -> Channel:
-        if self.type == ChannelType.REPO and not self.repo_path:
+        name = self.name.strip()
+        if not name:
+            raise ValueError("name must not be empty")
+        self.name = name
+
+        repo_path = self.repo_path.strip() if self.repo_path is not None else None
+        if self.type == ChannelType.REPO and not repo_path:
             raise ValueError("repo_path is required for repo channels")
-        if self.type == ChannelType.GENERAL and self.repo_path is not None:
+        if self.type == ChannelType.GENERAL and repo_path:
             raise ValueError("repo_path must not be set for general channels")
+
+        self.repo_path = repo_path if self.type == ChannelType.REPO else None
         return self
 
 
