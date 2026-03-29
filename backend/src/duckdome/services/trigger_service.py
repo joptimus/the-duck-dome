@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import time
+from typing import TYPE_CHECKING
 
 from duckdome.models.trigger import Trigger, TriggerStatus
 from duckdome.models.channel import AgentInstance
 from duckdome.stores.trigger_store import TriggerStore
 from duckdome.stores.base import BaseChannelStore
+
+if TYPE_CHECKING:
+    from duckdome.ws.manager import ConnectionManager
 
 
 class TriggerService:
@@ -13,9 +17,17 @@ class TriggerService:
         self,
         trigger_store: TriggerStore,
         channel_store: BaseChannelStore,
+        ws_manager: ConnectionManager | None = None,
     ) -> None:
         self._triggers = trigger_store
         self._channels = channel_store
+        self._ws_manager = ws_manager
+
+    def _broadcast(self, event: dict) -> None:
+        """Fire-and-forget broadcast to WebSocket clients (if manager is set)."""
+        if self._ws_manager is None:
+            return
+        self._ws_manager.broadcast_sync(event)
 
     # --- Trigger lifecycle ---
 
@@ -59,6 +71,17 @@ class TriggerService:
         agent.current_task = trigger.source_message_id
         self._channels.update_agent(agent_id, agent)
 
+        self._broadcast({
+            "type": "trigger_state_change",
+            "trigger_id": trigger.id,
+            "state": trigger.status.value,
+        })
+        self._broadcast({
+            "type": "agent_status_change",
+            "agent_id": agent_id,
+            "status": agent.status,
+        })
+
         return trigger
 
     def complete_trigger(self, trigger_id: str) -> Trigger | None:
@@ -78,6 +101,17 @@ class TriggerService:
             agent.last_response = time.time()
             agent.current_task = None
             self._channels.update_agent(agent.id, agent)
+            self._broadcast({
+                "type": "agent_status_change",
+                "agent_id": agent.id,
+                "status": agent.status,
+            })
+
+        self._broadcast({
+            "type": "trigger_state_change",
+            "trigger_id": trigger.id,
+            "state": trigger.status.value,
+        })
 
         return trigger
 
@@ -99,6 +133,17 @@ class TriggerService:
             agent.current_task = None
             agent.last_error = error
             self._channels.update_agent(agent.id, agent)
+            self._broadcast({
+                "type": "agent_status_change",
+                "agent_id": agent.id,
+                "status": agent.status,
+            })
+
+        self._broadcast({
+            "type": "trigger_state_change",
+            "trigger_id": trigger.id,
+            "state": trigger.status.value,
+        })
 
         return trigger
 
@@ -142,7 +187,14 @@ class TriggerService:
         if agent is None:
             return None
         agent.last_heartbeat = time.time()
-        return self._channels.update_agent(agent_id, agent)
+        updated = self._channels.update_agent(agent_id, agent)
+        if updated:
+            self._broadcast({
+                "type": "agent_status_change",
+                "agent_id": agent_id,
+                "status": updated.status,
+            })
+        return updated
 
     def deregister_agent(
         self, channel_id: str, agent_type: str

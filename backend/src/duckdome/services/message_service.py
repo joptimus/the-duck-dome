@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import re
 import time
+from typing import TYPE_CHECKING
 
-from duckdome.models.message import Delivery, DeliveryState, Message
+from duckdome.models.message import Delivery, DeliveryState, Message, MessageType
 from duckdome.stores.message_store import MessageStore
+
+if TYPE_CHECKING:
+    from duckdome.ws.manager import ConnectionManager
 
 
 class MessageService:
@@ -13,11 +17,19 @@ class MessageService:
         store: MessageStore,
         known_agents: list[str],
         channel_service: object | None = None,
+        ws_manager: ConnectionManager | None = None,
     ) -> None:
         self._store = store
         self._known_agents = [a.lower() for a in known_agents]
         self._channel_service = channel_service
+        self._ws_manager = ws_manager
         self._build_mention_regex()
+
+    def _broadcast(self, event: dict) -> None:
+        """Fire-and-forget broadcast to WebSocket clients (if manager is set)."""
+        if self._ws_manager is None:
+            return
+        self._ws_manager.broadcast_sync(event)
 
     def _build_mention_regex(self) -> None:
         if not self._known_agents:
@@ -52,7 +64,13 @@ class MessageService:
         channel_agents = {a.lower() for a in self._channel_service.get_agent_types(channel_id)}
         return [m for m in mentions if m in channel_agents]
 
-    def send(self, text: str, channel: str, sender: str) -> Message:
+    def send(
+        self,
+        text: str,
+        channel: str,
+        sender: str,
+        type: MessageType | None = None,
+    ) -> Message:
         if self._channel_service and not self._channel_service.validate_channel(channel):
             raise ValueError(f"Invalid channel: {channel}")
 
@@ -71,10 +89,12 @@ class MessageService:
             text=text,
             channel=channel,
             sender=sender,
+            type=type or MessageType.CHAT,
             delivery=delivery,
             deliveries=deliveries,
         )
         self._store.add(msg)
+        self._broadcast({"type": "new_message", "message": msg.model_dump()})
         return msg
 
     def _get_delivery_for_agent(
