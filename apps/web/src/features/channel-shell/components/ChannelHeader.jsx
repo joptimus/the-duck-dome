@@ -1,4 +1,4 @@
-export default function ChannelHeader({ channel }) {
+export default function ChannelHeader({ channel, runtimeStrip }) {
   if (!channel) {
     return (
       <header className="channel-header">
@@ -25,6 +25,7 @@ export default function ChannelHeader({ channel }) {
           <p className="channel-header__repo-path channel-header__repo-path--muted">General channel</p>
         )}
       </div>
+      {runtimeStrip}
     </header>
   );
 }
