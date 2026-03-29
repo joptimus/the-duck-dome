@@ -46,6 +46,9 @@ class AgentInstance(BaseModel):
     current_task: str | None = None
     last_error: str | None = None
 
-    def model_post_init(self, _context: object) -> None:
-        if not self.id:
-            self.id = f"{self.channel_id}:{self.agent_type}"
+    @model_validator(mode="after")
+    def _enforce_id(self) -> AgentInstance:
+        expected = f"{self.channel_id}:{self.agent_type}"
+        if not self.id or self.id != expected:
+            self.id = expected
+        return self

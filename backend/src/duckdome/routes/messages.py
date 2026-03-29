@@ -51,7 +51,10 @@ class AgentResponseRequest(BaseModel):
 @router.post("", status_code=201)
 def send_message(body: SendMessageRequest):
     svc = _get_service()
-    msg = svc.send(text=body.text, channel=body.channel, sender=body.sender)
+    try:
+        msg = svc.send(text=body.text, channel=body.channel, sender=body.sender)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
     return msg.model_dump()
 
 
