@@ -15,6 +15,8 @@ import {
   getRepos,
   addRepoSource,
   removeRepoSource,
+  approveToolRequest,
+  denyToolRequest,
 } from "./api";
 import { createWsClient } from "../../api/ws";
 import { mockMessagesByChannelId } from "./mockData";
@@ -391,6 +393,38 @@ export default function ChannelShell() {
           prev.map((a) => (a.id === event.agent_id ? { ...a, status: event.status } : a)),
         );
       }
+
+      if (event.type === "tool_approval_updated" && event.approval) {
+        const approval = event.approval;
+        const approvalChannel = approval.channel;
+        const approvalMsg = {
+          id: approval.id,
+          sender: approval.agent,
+          sender_type: "tool_approval",
+          status: approval.status,
+          agent: approval.agent,
+          tool: approval.tool,
+          command: JSON.stringify(approval.arguments),
+          reason: `${approval.agent} wants to use ${approval.tool}`,
+          time: new Date((approval.created_at || 0) * 1000).toLocaleTimeString(),
+          resolvedAt: approval.resolved_at
+            ? new Date(approval.resolved_at * 1000).toLocaleTimeString()
+            : null,
+          channel: approvalChannel,
+        };
+        setMessagesByChannelId((prev) => {
+          const existing = prev[approvalChannel] || [];
+          const idx = existing.findIndex((m) => m.id === approval.id);
+          if (idx >= 0) {
+            // Update existing approval message
+            const updated = [...existing];
+            updated[idx] = approvalMsg;
+            return { ...prev, [approvalChannel]: updated };
+          }
+          // Add new approval message
+          return { ...prev, [approvalChannel]: [...existing, approvalMsg] };
+        });
+      }
     }
 
     const client = createWsClient(WS_URL, handleWsEvent, setWsConnected);
@@ -446,6 +480,22 @@ export default function ChannelShell() {
     () => activeMessages.filter((m) => m.sender_type === "tool_approval" && m.status === "pending").length,
     [activeMessages],
   );
+
+  const handleApproveToolRequest = useCallback(async (approvalId) => {
+    try {
+      await approveToolRequest(approvalId);
+    } catch (err) {
+      console.error("Failed to approve tool request:", err);
+    }
+  }, []);
+
+  const handleDenyToolRequest = useCallback(async (approvalId) => {
+    try {
+      await denyToolRequest(approvalId);
+    } catch (err) {
+      console.error("Failed to deny tool request:", err);
+    }
+  }, []);
 
   const onCreate = async (payload) => {
     const created = await createChannel(payload);
@@ -695,6 +745,8 @@ export default function ChannelShell() {
         <ChatTimeline
           messages={activeMessages}
           channelName={showChannel?.name}
+          onApprove={handleApproveToolRequest}
+          onDeny={handleDenyToolRequest}
         />
 
         <AgentThinkingStrip

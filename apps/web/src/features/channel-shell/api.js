@@ -185,6 +185,22 @@ export async function triggerAgent(agentType, sender, text, channelId) {
   });
 }
 
+export async function approveToolRequest(approvalId, { remember = false } = {}) {
+  return request(`/api/tool_approvals/${encodeURIComponent(approvalId)}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resolved_by: "human", remember }),
+  });
+}
+
+export async function denyToolRequest(approvalId, { remember = false } = {}) {
+  return request(`/api/tool_approvals/${encodeURIComponent(approvalId)}/deny`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resolved_by: "human", remember }),
+  });
+}
+
 export async function getRepos() {
   return request("/api/repos");
 }
