@@ -1,0 +1,58 @@
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 8px 0;
+  margin-bottom: 20px;
+}
+
+.lineLeft {
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, transparent, var(--border));
+}
+
+.lineRight {
+  height: 1px;
+  flex: 1;
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+
+.pill {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 16px;
+  border-radius: 20px;
+  background: rgba(0, 255, 163, 0.03);
+  border: 1px solid rgba(0, 255, 163, 0.13);
+  box-shadow: 0 0 16px rgba(0, 255, 163, 0.07);
+}
+
+.label {
+  font-family: var(--font-display);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--success);
+  letter-spacing: var(--ls-lg);
+}
+
+.divider {
+  width: 1px;
+  height: 12px;
+  background: rgba(0, 255, 163, 0.13);
+}
+
+.sessionId {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.agentCount {
+  font-family: var(--font-label);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--warning);
+}

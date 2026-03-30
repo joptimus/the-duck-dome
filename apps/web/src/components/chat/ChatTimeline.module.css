@@ -1,0 +1,5 @@
+.timeline {
+  flex: 1;
+  overflow: auto;
+  padding: 20px 24px;
+}
