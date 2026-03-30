@@ -1,0 +1,138 @@
+.sidebar {
+  width: 228px;
+  min-width: 228px;
+  background: rgba(11, 16, 32, 0.94); /* --bg-sidebar at F0 opacity */
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+  z-index: 2;
+  backdrop-filter: blur(12px);
+}
+
+/* ── Logo Header ── */
+.logoHeader {
+  padding: 14px 16px 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  position: relative;
+}
+
+.gradientLine {
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--gradient);
+  opacity: 0.4;
+}
+
+.logoIcon {
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  background: linear-gradient(135deg, rgba(0, 212, 255, 0.19), rgba(168, 85, 247, 0.19));
+  border: 1.5px solid rgba(0, 212, 255, 0.31);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 0 16px rgba(0, 212, 255, 0.21), 0 0 32px rgba(168, 85, 247, 0.13);
+  animation: breathe 3s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+.logoTitle {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 12.5px;
+  background: var(--gradient);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 0.06em;
+  animation: voltFlash 3s ease-in-out infinite;
+}
+
+.logoSubtitle {
+  font-family: var(--font-label);
+  font-size: 8.5px;
+  letter-spacing: var(--ls-xxl);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  margin-top: -1px;
+}
+
+.logoText {
+  min-width: 0;
+}
+
+/* ── Pinned Drawer ── */
+.pinnedSection {
+  border-bottom: 1px solid var(--border);
+}
+
+.pinnedHeader {
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.pinnedChevron {
+  font-size: 10px;
+  color: var(--text-muted);
+  transition: transform 0.15s;
+}
+
+.pinnedLabel {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  letter-spacing: var(--ls-sm);
+}
+
+.pinnedEmpty {
+  padding: 0 14px 10px;
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* ── Scrollable Area ── */
+.scrollArea {
+  flex: 1;
+  overflow: auto;
+  padding-top: 10px;
+}
+
+.sectionHeader {
+  padding: 0 14px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.addBtn {
+  background: none;
+  border: none;
+  color: var(--blue);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0;
+}
+
+/* ── Separator ── */
+.separator {
+  height: 1px;
+  margin: 12px 16px;
+  background: linear-gradient(90deg, rgba(168, 85, 247, 0.19), var(--border), transparent);
+}
