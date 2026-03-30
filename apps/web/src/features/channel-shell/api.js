@@ -102,3 +102,23 @@ export async function sendChannelMessage({ channelId, text, sender = "human" }) 
     }),
   });
 }
+
+export async function getRepos() {
+  return request("/api/repos");
+}
+
+export async function addRepoSource(path) {
+  return request("/api/repos/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+}
+
+export async function removeRepoSource(path) {
+  return request("/api/repos/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+}
