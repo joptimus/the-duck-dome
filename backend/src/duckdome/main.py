@@ -70,6 +70,45 @@ def _wait_for_mcp(port: int = 8200, timeout: float = 10.0) -> None:
     logger.warning("MCP server not ready after %.0fs — starting agents anyway", timeout)
 
 
+def _start_agents_deferred(wrapper_service) -> None:
+    """Start agents in a background thread after the full server is up.
+
+    Uvicorn doesn't serve requests until the lifespan context yields,
+    so agents launched inside lifespan would try to connect to MCP
+    before the server is ready. This thread waits for both the MCP
+    server (:8200) and the FastAPI server (:8000) to be up first.
+    """
+    import shutil
+
+    _wait_for_mcp(port=8200)
+
+    # Also wait for FastAPI to be serving (the proxy needs :8000 for
+    # tool approval API calls)
+    _wait_for_http(port=8000)
+
+    for agent_type in ["claude", "codex", "gemini"]:
+        if shutil.which(agent_type):
+            wrapper_service.start_agent(agent_type)
+        else:
+            logger.info("Skipping %s: CLI not found in PATH", agent_type)
+
+
+def _wait_for_http(port: int = 8000, timeout: float = 10.0) -> None:
+    """Block until the HTTP server is accepting connections."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            req = Request(f"http://127.0.0.1:{port}/api/health", method="GET")
+            with urlopen(req, timeout=3) as resp:
+                if resp.status == 200:
+                    logger.info("FastAPI server ready on port %d", port)
+                    return
+        except (URLError, OSError):
+            pass
+        time.sleep(0.3)
+    logger.warning("FastAPI server not ready after %.0fs — starting agents anyway", timeout)
+
+
 @asynccontextmanager
 async def _lifespan(application: FastAPI):
     """Start MCP transport and agent processes on app startup."""
@@ -85,19 +124,16 @@ async def _lifespan(application: FastAPI):
     )
     mcp_thread.start()
 
-    # Wait for MCP server to be ready before starting agents.
-    # Claude Code connects to MCP on startup — if it fails, it marks
-    # the server as "failed" and never retries.
-    _wait_for_mcp(port=8200)
-
-    # Start persistent agent processes (skip agents not installed)
-    import shutil
+    # Start agents in a background thread — they need both the MCP
+    # server (:8200) and FastAPI (:8000) to be fully serving first.
     wrapper_service = application.state.wrapper_service
-    for agent_type in ["claude", "codex", "gemini"]:
-        if shutil.which(agent_type):
-            wrapper_service.start_agent(agent_type)
-        else:
-            logging.getLogger(__name__).info("Skipping %s: CLI not found in PATH", agent_type)
+    agent_thread = threading.Thread(
+        target=_start_agents_deferred,
+        args=(wrapper_service,),
+        daemon=True,
+        name="agent-launcher",
+    )
+    agent_thread.start()
 
     yield
 
