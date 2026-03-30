@@ -1,0 +1,20 @@
+.strip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 6px 20px;
+  border-top: 1px solid var(--border);
+}
+
+.agent {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.text {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+  animation: textPulse 2s ease-in-out infinite;
+}
