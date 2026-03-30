@@ -1,30 +1,97 @@
+import { useState } from 'react';
 import { SectionLabel } from '../primitives/SectionLabel';
-import { FolderIcon, PlusIcon, RefreshIcon, CubeIcon } from '../icons/Icons';
+import { FolderIcon, PlusIcon, XIcon, RefreshIcon, CubeIcon } from '../icons/Icons';
+import AddRepoForm from './AddRepoForm';
 import styles from './RepoList.module.css';
 
-export function RepoList({ repos }) {
+function shortenPath(fullPath) {
+  const home = fullPath.match(/^(\/Users\/[^/]+|\/home\/[^/]+|[A-Z]:\\Users\\[^\\]+)/);
+  if (home) return fullPath.replace(home[0], '~');
+  return fullPath;
+}
+
+function RepoRow({ name, path, active, onRemove }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      className={styles.row}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <CubeIcon size={13} color={active ? 'var(--purple)' : 'var(--text-muted)'} />
+      <div className={styles.rowContent}>
+        <span className={`${styles.repoName} ${active ? styles.repoNameActive : ''}`}>
+          {name}
+        </span>
+        {hovered && (
+          <span className={styles.repoPath}>{shortenPath(path)}</span>
+        )}
+      </div>
+      {hovered && (
+        <button
+          className={styles.deleteBtn}
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          title="Remove repo"
+        >
+          <XIcon size={12} color="var(--error)" />
+        </button>
+      )}
+    </div>
+  );
+}
+
+export function RepoList({ repos, onAddRepo, onRemoveRepo, onRefreshRepos, onBrowseRepo }) {
+  const [showForm, setShowForm] = useState(false);
+
+  const handleAdd = (path) => {
+    onAddRepo(path);
+    setShowForm(false);
+  };
+
   return (
     <div>
       <div className={styles.header}>
         <SectionLabel color="var(--purple)">Repos</SectionLabel>
         <div className={styles.headerIcons}>
-          <span className={styles.headerIcon}>
-            <FolderIcon size={12} color="var(--text-muted)" />
-          </span>
-          <span className={styles.headerIcon}>
-            <PlusIcon size={12} color="var(--purple)" />
-          </span>
-          <span className={styles.headerIcon}>
-            <RefreshIcon size={12} color="var(--purple)" />
-          </span>
+          <button className={styles.headerIconMuted} onClick={onBrowseRepo} title="Browse for folder">
+            <FolderIcon size={14} color="var(--text-muted)" />
+          </button>
+          <button
+            className={styles.headerIcon}
+            onClick={() => setShowForm(!showForm)}
+            title={showForm ? 'Close' : 'Add repo'}
+          >
+            {showForm
+              ? <XIcon size={14} color="var(--purple)" />
+              : <PlusIcon size={14} color="var(--purple)" />
+            }
+          </button>
+          <button className={styles.headerIcon} onClick={onRefreshRepos} title="Refresh repos">
+            <RefreshIcon size={14} color="var(--purple)" />
+          </button>
         </div>
       </div>
-      {repos.map((repo) => (
-        <div key={repo} className={styles.row}>
-          <CubeIcon size={11} color="var(--text-muted)" />
-          <span className={styles.repoName}>{repo}</span>
-        </div>
-      ))}
+
+      {showForm && (
+        <AddRepoForm
+          onAdd={handleAdd}
+          onCancel={() => setShowForm(false)}
+          onBrowse={onBrowseRepo}
+        />
+      )}
+
+      <div className={styles.list}>
+        {repos.map((repo, idx) => (
+          <RepoRow
+            key={repo.path}
+            name={repo.name}
+            path={repo.path}
+            active={repo.active || false}
+            onRemove={() => onRemoveRepo(repo.path)}
+          />
+        ))}
+      </div>
     </div>
   );
 }

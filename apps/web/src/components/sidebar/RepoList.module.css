@@ -12,34 +12,80 @@
   align-items: center;
 }
 
-.headerIcon {
+.headerIcon,
+.headerIconMuted {
+  background: none;
+  border: none;
   cursor: pointer;
   opacity: 0.5;
   display: flex;
+  align-items: center;
+  padding: 0;
+  transition: opacity 0.15s;
 }
 
-.headerIcon:hover {
-  opacity: 0.8;
+.headerIcon:hover,
+.headerIconMuted:hover {
+  opacity: 1;
+}
+
+.list {
+  max-height: 300px;
+  overflow: auto;
 }
 
 .row {
-  padding: 5px 14px 5px 16px;
+  padding: 6px 14px 6px 16px;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 7px;
   cursor: pointer;
+  transition: background 0.1s;
 }
 
 .row:hover {
   background: rgba(255, 255, 255, 0.02);
 }
 
+.rowContent {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
 .repoName {
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 14px;
   color: var(--text-secondary);
-  flex: 1;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.repoNameActive {
+  color: var(--text-primary);
+}
+
+.repoPath {
+  font-family: var(--font-mono);
+  font-size: var(--fs-micro);
+  color: var(--text-muted);
+  animation: fadeUp 0.15s ease;
+}
+
+.deleteBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  opacity: 0.4;
+  display: flex;
+  align-items: center;
+  padding: 2px;
+  flex-shrink: 0;
+  transition: opacity 0.15s;
+}
+
+.deleteBtn:hover {
+  opacity: 1;
 }
