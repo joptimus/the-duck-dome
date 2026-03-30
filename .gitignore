@@ -104,3 +104,6 @@ data/
 sessions/
 exports/
 uploads/
+# AI agent tool directories
+.claude/
+.claire/
