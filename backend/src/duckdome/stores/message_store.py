@@ -44,7 +44,7 @@ class MessageStore:
                 f.write(self._messages[msg_id].model_dump_json() + "\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.rename(self._file)
+        tmp.replace(self._file)
 
     def add(self, msg: Message) -> Message:
         if msg.id in self._messages:

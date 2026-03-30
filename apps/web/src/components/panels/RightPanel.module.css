@@ -2,22 +2,22 @@
   background: var(--bg-surface);
   border-left: 1px solid var(--border);
   height: 100%;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   animation: slideIn 0.25s ease;
   display: flex;
   flex-direction: column;
-  position: relative;
   flex-shrink: 0;
 }
 
 .accentBar {
-  position: absolute;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
   height: 2px;
   background: var(--gradient);
   opacity: 0.6;
+  z-index: 3;
+  flex-shrink: 0;
 }
 
 .header {

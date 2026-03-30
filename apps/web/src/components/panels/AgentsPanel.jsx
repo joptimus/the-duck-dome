@@ -4,7 +4,6 @@ import { ElectricPulse } from "../effects/ElectricPulse";
 import {
   AgentLogo,
   EditIcon,
-  FolderIcon,
   PlayIcon,
   PlusIcon,
   PowerIcon,
@@ -29,7 +28,7 @@ export function AgentsPanel({
   const [editingPrompt, setEditingPrompt] = useState(null);
   const [draftPrompts, setDraftPrompts] = useState({});
   const [adding, setAdding] = useState(false);
-  const [newAgent, setNewAgent] = useState({ type: "", repo: "", prompt: "" });
+  const [newAgent, setNewAgent] = useState({ type: "", prompt: "" });
 
   if (!open) {
     return null;
@@ -39,11 +38,11 @@ export function AgentsPanel({
   const availableTypes = allAgentTypes.filter((type) => !agents.find((agent) => agent.agent === type));
 
   function handleAdd() {
-    if (!newAgent.type || !newAgent.repo) {
+    if (!newAgent.type) {
       return;
     }
-    onAddAgent?.(newAgent);
-    setNewAgent({ type: "", repo: "", prompt: "" });
+    onAddAgent?.({ ...newAgent, workspace: channelName });
+    setNewAgent({ type: "", prompt: "" });
     setAdding(false);
   }
 
@@ -82,7 +81,7 @@ export function AgentsPanel({
 
           const isEditing = editingPrompt === index;
           return (
-            <div key={agent.agent} className={styles.agentCard} style={{ opacity: agent.running ? 1 : 0.6 }}>
+            <div key={agent.id || agent.agent} className={styles.agentCard} style={{ opacity: agent.running ? 1 : 0.6 }}>
               <div className={styles.agentHeaderRow}>
                 <div
                   className={styles.avatar}
@@ -110,7 +109,7 @@ export function AgentsPanel({
                 <button
                   type="button"
                   className={`${styles.toggleBtn} ${agent.running ? styles.stopBtn : styles.startBtn}`}
-                  onClick={() => onToggleAgent?.(index)}
+                  onClick={() => onToggleAgent?.(agent)}
                 >
                   {agent.running ? (
                     <StopIcon size={12} color="var(--error)" />
@@ -118,20 +117,6 @@ export function AgentsPanel({
                     <PlayIcon size={10} color="var(--success)" />
                   )}
                 </button>
-              </div>
-
-              <div className={styles.fieldGroup}>
-                <div className={styles.fieldLabel}>
-                  <FolderIcon size={10} color="var(--text-muted)" />
-                  Working directory
-                </div>
-                <select className={styles.repoSelect} value={agent.repo} disabled onChange={() => {}}>
-                  {repos.map((repo) => (
-                    <option key={repo} value={repo}>
-                      {repo}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               <div className={styles.fieldGroup}>
@@ -181,7 +166,7 @@ export function AgentsPanel({
 
               {!agent.running ? (
                 <div className={styles.removeRow}>
-                  <button type="button" className={styles.removeBtn} onClick={() => onRemoveAgent?.(index)}>
+                  <button type="button" className={styles.removeBtn} onClick={() => onRemoveAgent?.(agent)}>
                     <TrashIcon size={10} color="currentColor" />
                     Remove from channel
                   </button>
@@ -232,23 +217,6 @@ export function AgentsPanel({
             </div>
 
             <div className={styles.fieldLabel}>
-              <FolderIcon size={10} color="var(--text-muted)" />
-              Working directory
-            </div>
-            <select
-              className={styles.repoSelect}
-              value={newAgent.repo}
-              onChange={(event) => setNewAgent((prev) => ({ ...prev, repo: event.target.value }))}
-            >
-              <option value="">Select a repo...</option>
-              {repos.map((repo) => (
-                <option key={repo} value={repo}>
-                  {repo}
-                </option>
-              ))}
-            </select>
-
-            <div className={styles.fieldLabel}>
               <TerminalIcon size={10} color="var(--text-muted)" />
               System prompt
             </div>
@@ -266,7 +234,7 @@ export function AgentsPanel({
                 className={styles.cancelBtn}
                 onClick={() => {
                   setAdding(false);
-                  setNewAgent({ type: "", repo: "", prompt: "" });
+                  setNewAgent({ type: "", prompt: "" });
                 }}
               >
                 Cancel
@@ -274,10 +242,10 @@ export function AgentsPanel({
               <button
                 type="button"
                 className={styles.spawnBtn}
-                disabled={!newAgent.type || !newAgent.repo}
+                disabled={!newAgent.type}
                 onClick={handleAdd}
               >
-                {newAgent.type && newAgent.repo ? <div className={styles.shimmerOverlay} /> : null}
+                {newAgent.type ? <div className={styles.shimmerOverlay} /> : null}
                 <span className={styles.spawnContent}>
                   <PowerIcon size={11} color="currentColor" />
                   SPAWN

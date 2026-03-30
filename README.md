@@ -86,44 +86,33 @@ git clone https://github.com/joptimus/the-duck-dome.git
 cd the-duck-dome
 ```
 
-### 2. Install dependencies
+### 2. Run the dev environment
 
-```bash
-# Backend
-cd backend
-python -m venv .venv
-source .venv/bin/activate
-pip install -e ".[dev]"
+The dev script installs dependencies automatically on first run and starts the backend, web UI, and Electron shell.
 
-# Web
-cd ../apps/web
-npm install
-
-# Desktop
-cd ../desktop
-npm install
-```
-
-### 3. Run the dev environment
-
-The quickest way to start both backend and web:
+**macOS / Linux:**
 
 ```bash
 ./scripts/dev.sh
 ```
 
-This starts:
-- **Backend** at `http://localhost:8000`
-- **Web UI** at `http://localhost:5173`
+**Windows (PowerShell):**
 
-To also run the Electron shell:
-
-```bash
-cd apps/desktop
-npm run dev
+```powershell
+.\scripts\dev.ps1
 ```
 
-### 4. Run tests
+> If you get an execution policy error, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` first.
+
+This starts:
+- **Backend** at `http://localhost:8000`
+- **MCP transport** at `http://localhost:8200`
+- **Web UI** at `http://localhost:5173`
+- **Electron** shell
+
+The Windows script automatically kills stale processes on ports 8000, 8200, and 5173 before starting.
+
+### 3. Run tests
 
 ```bash
 cd backend

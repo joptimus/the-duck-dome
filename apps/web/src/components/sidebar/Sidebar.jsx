@@ -16,6 +16,11 @@ export function Sidebar({
   onSessionLaunch,
   userName = "James",
   userInitial = "J",
+  onAddRepo,
+  onRemoveRepo,
+  onRefreshRepos,
+  onBrowseRepo,
+  onOpenRepoChannel,
 }) {
   const [pinnedOpen, setPinnedOpen] = useState(false);
 
@@ -70,7 +75,14 @@ export function Sidebar({
         <div className={styles.separator} />
 
         {/* Repos */}
-        <RepoList repos={repos} />
+        <RepoList
+          repos={repos}
+          onAddRepo={onAddRepo}
+          onRemoveRepo={onRemoveRepo}
+          onRefreshRepos={onRefreshRepos}
+          onBrowseRepo={onBrowseRepo}
+          onOpenRepo={onOpenRepoChannel}
+        />
       </div>
 
       {/* Zone 5: User Footer */}

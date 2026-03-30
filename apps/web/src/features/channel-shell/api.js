@@ -71,6 +71,75 @@ export async function getChannelAgents(channelId) {
   }
 }
 
+export async function addChannelAgent(channelId, agentType) {
+  try {
+    return await request(`/api/channels/${encodeURIComponent(channelId)}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_type: agentType }),
+    });
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
+    return {
+      id: `${channelId}:${agentType}`,
+      channel_id: channelId,
+      agent_type: agentType,
+      status: "idle",
+      last_heartbeat: null,
+    };
+  }
+}
+
+export async function removeChannelAgent(channelId, agentType) {
+  return request(`/api/channels/${encodeURIComponent(channelId)}/agents/${encodeURIComponent(agentType)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function registerRuntimeAgent(channelId, agentType) {
+  try {
+    return await request("/api/agents/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel_id: channelId,
+        agent_type: agentType,
+      }),
+    });
+  } catch (error) {
+    if (!error?.isNetworkError && !(error?.status >= 500)) throw error;
+    return {
+      id: `${channelId}:${agentType}`,
+      channel_id: channelId,
+      agent_type: agentType,
+      status: "idle",
+      __localFallback: true,
+    };
+  }
+}
+
+export async function deregisterRuntimeAgent(channelId, agentType) {
+  try {
+    return await request("/api/agents/deregister", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel_id: channelId,
+        agent_type: agentType,
+      }),
+    });
+  } catch (error) {
+    if (!error?.isNetworkError && !(error?.status >= 500)) throw error;
+    return {
+      id: `${channelId}:${agentType}`,
+      channel_id: channelId,
+      agent_type: agentType,
+      status: "offline",
+      __localFallback: true,
+    };
+  }
+}
+
 export async function getChannelTriggers(channelId) {
   try {
     return await request(`/api/channels/${encodeURIComponent(channelId)}/triggers`);
@@ -100,5 +169,36 @@ export async function sendChannelMessage({ channelId, text, sender = "human" }) 
       channel: channelId,
       sender,
     }),
+  });
+}
+
+export async function executeRunner(channelId, agentType) {
+  return request("/api/runners/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      channel_id: channelId,
+      agent_type: agentType,
+    }),
+  });
+}
+
+export async function getRepos() {
+  return request("/api/repos");
+}
+
+export async function addRepoSource(path) {
+  return request("/api/repos/add", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
+  });
+}
+
+export async function removeRepoSource(path) {
+  return request("/api/repos/remove", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ path }),
   });
 }

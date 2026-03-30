@@ -1,12 +1,20 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addChannelAgent,
   createChannel,
+  deregisterRuntimeAgent,
+  executeRunner,
   getChannel,
   getChannelAgents,
   getChannelMessages,
   getChannels,
   getChannelTriggers,
+  registerRuntimeAgent,
+  removeChannelAgent,
   sendChannelMessage,
+  getRepos,
+  addRepoSource,
+  removeRepoSource,
 } from "./api";
 import { createWsClient } from "../../api/ws";
 import { mockMessagesByChannelId } from "./mockData";
@@ -19,7 +27,7 @@ import { AgentThinkingStrip } from "../../components/chat/AgentThinkingStrip";
 import { ActivityPanel, AgentsPanel, JobsPanel, RulesPanel, SettingsPanel } from "../../components/panels";
 import { SessionLauncher } from "../../components/modals/SessionLauncher";
 import { ScheduleModal } from "../../components/modals/ScheduleModal";
-import ChannelCreateModal from "./components/ChannelCreateModal";
+import CreateChannelModal from "../../components/modals/CreateChannelModal";
 
 function normalizeChannels(data) {
   if (!Array.isArray(data)) return [];
@@ -30,6 +38,24 @@ function normalizeChannels(data) {
     repo_path: item.repo_path || null,
     unread_count: Number.isFinite(Number(item.unread_count)) ? Number(item.unread_count) : 0,
   }));
+}
+
+function normalizeFsPath(path) {
+  return String(path || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\/+$/g, "")
+    .toLowerCase();
+}
+
+function slugifyName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function normalizeAgents(data, channelId) {
@@ -124,6 +150,36 @@ function computeOpenByAgent(triggers) {
   return counts;
 }
 
+function extractMentionTargets(text, availableAgents = []) {
+  const tags = String(text || "")
+    .toLowerCase()
+    .match(/@([a-z0-9_-]+)/g) || [];
+  if (tags.length === 0) return [];
+
+  const mentions = tags.map((tag) => tag.slice(1));
+  const unique = [];
+  const seen = new Set();
+
+  for (const mention of mentions) {
+    if (mention === "all") {
+      for (const agent of availableAgents) {
+        if (!seen.has(agent)) {
+          seen.add(agent);
+          unique.push(agent);
+        }
+      }
+      continue;
+    }
+
+    if (availableAgents.includes(mention) && !seen.has(mention)) {
+      seen.add(mention);
+      unique.push(mention);
+    }
+  }
+
+  return unique;
+}
+
 function mergeRuntimeAgents(agents, openByAgent) {
   return agents.map((agent) => {
     const triggerDerivedCount = openByAgent[agent.agent_type];
@@ -147,6 +203,7 @@ const WS_URL = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000")
 
 export default function ChannelShell() {
   const [channels, setChannels] = useState([]);
+  const [repos, setRepos] = useState([]);
   const [activeChannelId, setActiveChannelId] = useState(null);
   const [activeChannel, setActiveChannel] = useState(null);
   const [agents, setAgents] = useState([]);
@@ -165,6 +222,42 @@ export default function ChannelShell() {
   const [sessionLauncherOpen, setSessionLauncherOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 
+  const fetchRepos = useCallback(async () => {
+    try {
+      const data = await getRepos();
+      const repoList = Array.isArray(data) ? data : data?.repos ?? [];
+      setRepos(
+        repoList.map((r) => ({
+          name: r.name,
+          path: r.path,
+          active: false,
+        }))
+      );
+    } catch {
+      // API unavailable — keep current list
+    }
+  }, []);
+
+  const handleAddRepo = useCallback(async (path) => {
+    await addRepoSource(path);
+    await fetchRepos();
+  }, [fetchRepos]);
+
+  const handleRemoveRepo = useCallback(async (path) => {
+    await removeRepoSource(path);
+    await fetchRepos();
+  }, [fetchRepos]);
+
+  const handleBrowseRepo = useCallback(async () => {
+    if (window.duckdome?.pickDirectory) {
+      const result = await window.duckdome.pickDirectory();
+      if (!result.canceled && result.path) return result.path;
+      return null;
+    }
+    const entered = window.prompt('Enter absolute path to repo:') ?? '';
+    return entered.trim() || null;
+  }, []);
+
   useEffect(() => {
     let ignore = false;
 
@@ -178,10 +271,11 @@ export default function ChannelShell() {
     }
 
     loadChannels();
+    fetchRepos();
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [fetchRepos]);
 
   useEffect(() => {
     if (!activeChannelId) return undefined;
@@ -340,16 +434,12 @@ export default function ChannelShell() {
   const channelAgents = useMemo(
     () =>
       mergedAgents.map((a) => ({
+        id: a.id,
         agent: a.agent_type,
         running: a.status === "working" || a.status === "idle",
+        prompt: a.prompt || "",
       })),
     [mergedAgents],
-  );
-
-  // Derive repo list from channels for Sidebar
-  const repos = useMemo(
-    () => channels.filter((ch) => ch.type === "repo").map((ch) => ch.repo_path).filter(Boolean),
-    [channels],
   );
 
   // Pending approval count for TopBar pill
@@ -366,20 +456,165 @@ export default function ChannelShell() {
     setCreateOpen(false);
   };
 
+  const handleAddAgent = useCallback(
+    async ({ type }) => {
+      if (!activeChannelId || !type) {
+        return;
+      }
+      const resolvedChannelId =
+        channels.find((channel) => channel.id === activeChannelId || channel.name === activeChannelId)?.id
+        || activeChannelId;
+      try {
+        await addChannelAgent(resolvedChannelId, type);
+        await registerRuntimeAgent(resolvedChannelId, type);
+        const refreshed = await getChannelAgents(resolvedChannelId);
+        setAgents(normalizeAgents(refreshed, resolvedChannelId));
+        setAgentError(null);
+      } catch (error) {
+        console.error("Failed to add agent:", error);
+        setAgentError("Failed to add agent");
+        try {
+          const refreshed = await getChannelAgents(resolvedChannelId);
+          setAgents(normalizeAgents(refreshed, resolvedChannelId));
+        } catch { /* keep stale state if refresh also fails */ }
+      }
+    },
+    [activeChannelId, channels],
+  );
+
+  const handleToggleAgent = useCallback(
+    async (agent) => {
+      if (!activeChannelId || !agent?.agent) {
+        return;
+      }
+      const resolvedChannelId =
+        channels.find((channel) => channel.id === activeChannelId || channel.name === activeChannelId)?.id
+        || activeChannelId;
+
+      try {
+        const runtimeResult = agent.running
+          ? await deregisterRuntimeAgent(resolvedChannelId, agent.agent)
+          : await registerRuntimeAgent(resolvedChannelId, agent.agent);
+
+        if (runtimeResult?.__localFallback) {
+          setAgents((prev) =>
+            prev.map((item) =>
+              item.agent_type === agent.agent
+                ? { ...item, status: runtimeResult.status === "idle" ? "idle" : "offline" }
+                : item,
+            ),
+          );
+          setAgentError(null);
+          return;
+        }
+
+        const refreshed = await getChannelAgents(resolvedChannelId);
+        setAgents(normalizeAgents(refreshed, resolvedChannelId));
+        setAgentError(null);
+      } catch (error) {
+        console.error("Failed to toggle agent:", error);
+        setAgentError("Failed to toggle agent");
+      }
+    },
+    [activeChannelId, channels],
+  );
+
+  const handleRemoveAgent = useCallback(
+    async (agent) => {
+      if (!activeChannelId || !agent?.agent) {
+        return;
+      }
+      const resolvedChannelId =
+        channels.find((channel) => channel.id === activeChannelId || channel.name === activeChannelId)?.id
+        || activeChannelId;
+      try {
+        await removeChannelAgent(resolvedChannelId, agent.agent);
+        const refreshed = await getChannelAgents(resolvedChannelId);
+        setAgents(normalizeAgents(refreshed, resolvedChannelId));
+        setAgentError(null);
+      } catch (error) {
+        console.error("Failed to remove agent:", error);
+        setAgentError("Failed to remove agent");
+      }
+    },
+    [activeChannelId, channels],
+  );
+
+  const handleOpenRepoChannel = useCallback(
+    async (repo) => {
+      const repoPath = repo?.path;
+      if (!repoPath) return;
+
+      const normalizedRepoPath = normalizeFsPath(repoPath);
+      const existing = channels.find(
+        (channel) => channel.type === "repo" && normalizeFsPath(channel.repo_path) === normalizedRepoPath,
+      );
+      if (existing) {
+        setActiveChannelId(existing.id);
+        return;
+      }
+
+      const existingNames = new Set(channels.map((channel) => channel.name));
+      const baseName = slugifyName(repo.name || repoPath.split(/[\\/]/).pop() || "repo") || "repo";
+      let nextName = baseName;
+      let suffix = 2;
+      while (existingNames.has(nextName)) {
+        nextName = `${baseName}-${suffix}`;
+        suffix += 1;
+      }
+
+      try {
+        const created = await createChannel({
+          name: nextName,
+          type: "repo",
+          repo_path: repoPath,
+        });
+        const normalized = normalizeChannels([created])[0];
+        setChannels((prev) => [...prev, normalized]);
+        setActiveChannelId(normalized.id);
+      } catch (error) {
+        console.error("Failed to open repo channel:", error);
+        setChannelError("Failed to open repo channel");
+      }
+    },
+    [channels],
+  );
+
   const onSend = (text) => {
     if (!activeChannelId) {
       return Promise.reject(new Error("No active channel selected"));
     }
-    return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" }).catch(
-      (error) => {
+    return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" })
+      .then(async () => {
+        const targets = extractMentionTargets(
+          text,
+          mergedAgents.map((agent) => agent.agent_type),
+        );
+        if (targets.length === 0) {
+          return;
+        }
+        await Promise.allSettled(
+          targets.map((agentType) => executeRunner(activeChannelId, agentType)),
+        );
+      })
+      .catch((error) => {
         console.error("Failed to send message:", error);
         setMessagesError("Failed to send message");
         throw error;
-      },
-    );
+      });
   };
 
   const showChannel = activeChannel || channels.find((channel) => channel.id === activeChannelId) || null;
+  const reposWithActive = useMemo(
+    () =>
+      repos.map((repo) => ({
+        ...repo,
+        active:
+          showChannel?.type === "repo"
+          && normalizeFsPath(showChannel.repo_path) === normalizeFsPath(repo.path),
+      })),
+    [repos, showChannel],
+  );
 
   const togglePanel = (name) => {
     setActivePanel((prev) => (prev === name ? null : name));
@@ -403,6 +638,9 @@ export default function ChannelShell() {
             channelName={showChannel?.name}
             agents={channelAgents}
             repos={repos}
+            onAddAgent={handleAddAgent}
+            onToggleAgent={handleToggleAgent}
+            onRemoveAgent={handleRemoveAgent}
           />
         );
       case "jobs":
@@ -422,11 +660,16 @@ export default function ChannelShell() {
         sidebar={
           <Sidebar
             channels={channels}
-            repos={repos}
+            repos={reposWithActive}
             activeChannel={activeChannelId}
             onSelectChannel={setActiveChannelId}
             onCreateChannel={() => setCreateOpen(true)}
             onSessionLaunch={() => setSessionLauncherOpen(true)}
+            onAddRepo={handleAddRepo}
+            onRemoveRepo={handleRemoveRepo}
+            onRefreshRepos={fetchRepos}
+            onBrowseRepo={handleBrowseRepo}
+            onOpenRepoChannel={handleOpenRepoChannel}
           />
         }
         panel={renderPanel()}
@@ -466,7 +709,7 @@ export default function ChannelShell() {
         />
       </AppShell>
 
-      <ChannelCreateModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={onCreate} />
+      <CreateChannelModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={onCreate} repos={repos} />
       <SessionLauncher open={sessionLauncherOpen} onClose={() => setSessionLauncherOpen(false)} />
       <ScheduleModal open={scheduleModalOpen} onClose={() => setScheduleModalOpen(false)} />
     </>

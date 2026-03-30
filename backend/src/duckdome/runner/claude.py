@@ -38,6 +38,8 @@ def _run_cli(cmd: list[str], cwd: str | None, timeout_s: int, name: str) -> RunR
             cmd,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=timeout_s,
             cwd=cwd,
         )

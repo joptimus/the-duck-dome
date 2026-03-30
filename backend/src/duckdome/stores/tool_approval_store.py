@@ -63,7 +63,7 @@ class ToolApprovalStore:
                 f.write(self._approvals[approval_id].model_dump_json() + "\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.rename(self._approvals_file)
+        tmp.replace(self._approvals_file)
 
     def _save_policy(self) -> None:
         tmp = self._policy_file.with_suffix(".tmp")
@@ -71,7 +71,7 @@ class ToolApprovalStore:
             f.write(json.dumps(self._policy, indent=2) + "\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.rename(self._policy_file)
+        tmp.replace(self._policy_file)
 
     def add(self, approval: ToolApproval) -> ToolApproval:
         if approval.id in self._approvals:

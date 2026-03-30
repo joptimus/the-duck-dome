@@ -112,3 +112,19 @@ def test_add_agent_to_channel(client):
 def test_add_agent_to_nonexistent_channel(client):
     resp = client.post("/api/channels/nonexistent/agents", json={"agent_type": "claude"})
     assert resp.status_code == 404
+
+
+def test_remove_agent_from_channel(client):
+    r = client.post("/api/channels", json={"name": "general", "type": "general"})
+    ch_id = r.json()["id"]
+    client.post(f"/api/channels/{ch_id}/agents", json={"agent_type": "claude"})
+    resp = client.delete(f"/api/channels/{ch_id}/agents/claude")
+    assert resp.status_code == 200
+    assert resp.json() == {"removed": True}
+
+
+def test_remove_agent_not_found(client):
+    r = client.post("/api/channels", json={"name": "general", "type": "general"})
+    ch_id = r.json()["id"]
+    resp = client.delete(f"/api/channels/{ch_id}/agents/claude")
+    assert resp.status_code == 404

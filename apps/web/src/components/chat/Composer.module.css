@@ -163,5 +163,10 @@
 
 .hint {
   color: var(--purple);
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
+  vertical-align: baseline;
+  transform: translateY(1px);
 }
 

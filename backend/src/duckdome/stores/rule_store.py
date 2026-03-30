@@ -39,7 +39,7 @@ class RuleStore:
                 f.write(self._rules[rule_id].model_dump_json() + "\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.rename(self._file)
+        tmp.replace(self._file)
 
     def _append(self, rule: Rule) -> None:
         with open(self._file, "a", encoding="utf-8") as f:

@@ -203,6 +203,25 @@ export function FolderIcon({ size = 14, color = "currentColor" }) {
   );
 }
 
+export function HashIcon({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color, 2.5)}>
+      <line x1="8" y1="4" x2="6" y2="20" />
+      <line x1="16" y1="4" x2="14" y2="20" />
+      <line x1="4" y1="9" x2="20" y2="9" />
+      <line x1="3" y1="15" x2="19" y2="15" />
+    </svg>
+  );
+}
+
+export function MessageIcon({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color)}>
+      <path d="M21 12a8.99 8.99 0 0 1-9 9H5l-2 2v-7a9 9 0 1 1 18-4z" />
+    </svg>
+  );
+}
+
 export function CubeIcon({ size = 14, color = "currentColor" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color)}>
@@ -317,6 +336,37 @@ export function StopIcon({ size = 14, color = "currentColor" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="none">
       <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
+export function GitIcon({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color)}>
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <line x1="9" y1="6" x2="15" y2="6" />
+      <line x1="6" y1="9" x2="6" y2="15" />
+    </svg>
+  );
+}
+
+export function GitBranchIcon({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color)}>
+      <line x1="6" y1="3" x2="6" y2="15" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <path d="M18 9a9 9 0 0 1-9 9" />
+    </svg>
+  );
+}
+
+export function GitHubIcon({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} aria-hidden="true">
+      <path d="M12 .5a12 12 0 0 0-3.79 23.39c.6.11.82-.26.82-.58v-2.24c-3.34.73-4.04-1.61-4.04-1.61-.55-1.39-1.34-1.76-1.34-1.76-1.1-.74.08-.73.08-.73 1.2.08 1.85 1.25 1.85 1.25 1.08 1.84 2.82 1.31 3.5 1 .11-.78.42-1.31.76-1.62-2.67-.31-5.48-1.33-5.48-5.91 0-1.31.47-2.38 1.24-3.23-.12-.3-.54-1.53.12-3.18 0 0 1.02-.33 3.33 1.23a11.5 11.5 0 0 1 6.06 0c2.31-1.56 3.33-1.23 3.33-1.23.66 1.65.24 2.88.12 3.18.77.85 1.24 1.92 1.24 3.23 0 4.59-2.81 5.6-5.49 5.91.43.37.82 1.11.82 2.24v3.33c0 .32.22.7.82.58A12 12 0 0 0 12 .5Z" />
     </svg>
   );
 }
