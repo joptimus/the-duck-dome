@@ -1,0 +1,160 @@
+.section {
+  margin-bottom: 20px;
+}
+
+.sectionBody {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.field {
+  flex: 1;
+}
+
+.fieldLabel {
+  font-family: var(--font-body);
+  font-size: 11px;
+  color: var(--text-muted);
+  display: block;
+  margin-bottom: 3px;
+}
+
+.fieldInput {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  outline: none;
+}
+
+.fieldInput:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.19);
+}
+
+.fieldSelect {
+  width: 100%;
+  padding: 7px 10px;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  outline: none;
+  appearance: none;
+}
+
+.fieldSelect:focus {
+  border-color: var(--blue);
+  box-shadow: 0 0 12px rgba(0, 212, 255, 0.19);
+}
+
+.fieldRow {
+  display: flex;
+  gap: 8px;
+}
+
+.toggleRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.toggleLabel {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.toggleTrack {
+  width: 40px;
+  height: 22px;
+  border-radius: 11px;
+  cursor: pointer;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  position: relative;
+  transition: all 0.2s;
+}
+
+.toggleOn {
+  background: var(--gradient);
+  border-color: transparent;
+  box-shadow: 0 0 14px rgba(0, 212, 255, 0.31);
+}
+
+.toggleCircle {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  transition: left 0.2s ease;
+}
+
+.toggleCircleOn {
+  left: 21px;
+  box-shadow: 0 0 8px rgba(0, 212, 255, 0.5);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.cancelBtn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.cancelBtn:hover {
+  border-color: var(--text-muted);
+}
+
+.applyBtn {
+  padding: 7px 16px;
+  border-radius: 6px;
+  background: var(--gradient);
+  border: none;
+  color: #fff;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 11px;
+  cursor: pointer;
+  box-shadow: 0 0 14px rgba(0, 212, 255, 0.25), 0 0 30px rgba(168, 85, 247, 0.16);
+  position: relative;
+  overflow: hidden;
+}
+
+.shimmerOverlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s ease infinite;
+}
+
+.applyContent {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
