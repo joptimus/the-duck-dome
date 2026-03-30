@@ -23,9 +23,12 @@ def test_codex_launch_args():
         agent_type="codex",
         mcp_config_path=Path("/tmp/mcp-config-codex.json"),
         cwd=None,
+        mcp_url="http://localhost:8200/mcp",
     )
     assert result.cmd[0] == "codex"
-    assert "--mcp-config" in result.cmd
+    # Codex uses -c flags, not --mcp-config
+    assert "-c" in result.cmd
+    assert any("duckdome" in arg for arg in result.cmd)
 
 
 def test_unknown_agent_raises():

@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from duckdome.wrapper.injector import inject
-from duckdome.wrapper.mcp_config import generate_mcp_config
+from duckdome.wrapper.mcp_config import generate_gemini_settings, generate_mcp_config
 from duckdome.wrapper.providers import build_launch_args
 from duckdome.wrapper.queue import read_queue_entries
 
@@ -70,13 +70,20 @@ class AgentProcessManager:
                 logger.info("[%s] already running (pid=%s)", agent_type, self._agents[agent_type].pid)
                 return False
 
-        # Generate MCP config
-        mcp_config_path = generate_mcp_config(
-            self._config_dir, agent_type, self._mcp_url
-        )
+        # Generate MCP config (provider-specific format)
+        if agent_type == "gemini":
+            mcp_config_path = generate_gemini_settings(
+                self._config_dir, agent_type, self._mcp_url
+            )
+        else:
+            mcp_config_path = generate_mcp_config(
+                self._config_dir, agent_type, self._mcp_url
+            )
 
         # Build CLI args
-        launch = build_launch_args(agent_type, mcp_config_path, cwd)
+        launch = build_launch_args(
+            agent_type, mcp_config_path, cwd, mcp_url=self._mcp_url
+        )
 
         # Resolve .cmd shims on Windows
         use_shell = False

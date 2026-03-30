@@ -19,6 +19,7 @@ def test_generate_mcp_config_creates_valid_json():
         assert "mcpServers" in data
         assert "duckdome" in data["mcpServers"]
         assert data["mcpServers"]["duckdome"]["url"] == "http://localhost:8200/mcp"
+        assert data["mcpServers"]["duckdome"]["type"] == "http"
 
 
 def test_generate_mcp_config_unique_per_agent():
