@@ -19,6 +19,12 @@ if [ ! -d "$REPO_ROOT/apps/web/node_modules" ]; then
   (cd "$REPO_ROOT/apps/web" && npm install --silent)
 fi
 
+echo "==> Checking desktop dependencies..."
+if [ ! -d "$REPO_ROOT/apps/desktop/node_modules" ]; then
+  echo "    Installing npm packages..."
+  (cd "$REPO_ROOT/apps/desktop" && npm install --silent)
+fi
+
 # ── Run ───────────────────────────────────────────────────────────────────────
 
 echo "==> Starting DuckDome..."
@@ -29,17 +35,25 @@ BACKEND_PID=$!
 (cd "$REPO_ROOT/apps/web" && npm run dev) &
 WEB_PID=$!
 
+# Wait for Vite to be ready before launching Electron
+echo "==> Waiting for Vite..."
+until curl -s http://localhost:5173 > /dev/null 2>&1; do sleep 0.5; done
+
+(cd "$REPO_ROOT/apps/desktop" && npm run dev) &
+DESKTOP_PID=$!
+
 cleanup() {
   echo ""
   echo "==> Shutting down..."
-  kill "$BACKEND_PID" "$WEB_PID" 2>/dev/null || true
-  wait "$BACKEND_PID" "$WEB_PID" 2>/dev/null || true
+  kill "$BACKEND_PID" "$WEB_PID" "$DESKTOP_PID" 2>/dev/null || true
+  wait "$BACKEND_PID" "$WEB_PID" "$DESKTOP_PID" 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
 
 echo ""
 echo "    Backend → http://localhost:8000"
 echo "    Web UI  → http://localhost:5173"
+echo "    Electron → launching..."
 echo ""
 echo "    Ctrl+C to stop."
 echo ""

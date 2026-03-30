@@ -117,6 +117,13 @@ def fail_trigger(trigger_id: str, body: FailRequest):
     return trigger.model_dump()
 
 
+@router.get("/api/channels/{channel_id}/triggers", status_code=200)
+def list_channel_triggers(channel_id: str, status: str | None = None):
+    svc = _get_service()
+    triggers = svc.list_triggers(channel_id, status=status)
+    return [t.model_dump() for t in triggers]
+
+
 @router.get("/api/triggers", status_code=200)
 def list_triggers(channel_id: str, status: str | None = None):
     svc = _get_service()

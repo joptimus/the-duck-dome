@@ -17,9 +17,14 @@ function createWindow() {
   win.loadURL(DEV_URL);
 }
 
-const { stopBackend } = require("./backend");
+const { startBackend, stopBackend } = require("./backend");
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  if (app.isPackaged) {
+    startBackend();
+  }
+  createWindow();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
