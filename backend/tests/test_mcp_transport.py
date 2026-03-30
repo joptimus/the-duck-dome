@@ -3,6 +3,10 @@
 import os
 from unittest.mock import patch, MagicMock
 
+import pytest
+
+pytest.importorskip("mcp")
+
 from duckdome.mcp.transport import get_mcp_port, run_mcp_server
 from duckdome.mcp.bridge import McpBridge
 from duckdome.services.message_service import MessageService
