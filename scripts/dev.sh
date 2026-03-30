@@ -3,14 +3,31 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
+# ── Platform detection ───────────────────────────────────────────────────────
+
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*|Windows_NT*)
+    WINDOWS=true ;;
+  *)
+    WINDOWS=false ;;
+esac
+
+if $WINDOWS; then
+  VENV_ACTIVATE="$REPO_ROOT/backend/.venv/Scripts/activate"
+  PYTHON=python
+else
+  VENV_ACTIVATE="$REPO_ROOT/backend/.venv/bin/activate"
+  PYTHON=python3
+fi
+
 # ── Setup (idempotent) ────────────────────────────────────────────────────────
 
 echo "==> Checking backend..."
-if [ ! -f "$REPO_ROOT/backend/.venv/bin/activate" ]; then
+if [ ! -f "$VENV_ACTIVATE" ]; then
   echo "    Creating Python venv..."
-  python3 -m venv "$REPO_ROOT/backend/.venv"
+  $PYTHON -m venv "$REPO_ROOT/backend/.venv"
 fi
-source "$REPO_ROOT/backend/.venv/bin/activate"
+source "$VENV_ACTIVATE"
 pip install -e "$REPO_ROOT/backend[dev]" --quiet
 
 echo "==> Checking web dependencies..."
@@ -37,7 +54,7 @@ WEB_PID=$!
 
 # Wait for Vite to be ready before launching Electron
 echo "==> Waiting for Vite..."
-until curl -s http://localhost:5173 > /dev/null 2>&1; do sleep 0.5; done
+until curl -s http://localhost:5173 > /dev/null 2>&1; do sleep 1; done
 
 (cd "$REPO_ROOT/apps/desktop" && npm run dev) &
 DESKTOP_PID=$!

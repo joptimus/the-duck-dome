@@ -52,7 +52,9 @@ export function createWsClient(url, onEvent, onStatusChange) {
     close() {
       closed = true;
       clearTimeout(reconnectTimer);
-      ws?.close();
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.close();
+      }
     },
   };
 }
