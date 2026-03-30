@@ -61,6 +61,9 @@ class ToolApprovalService:
         self._broadcast(approval)
         return self.RequestResult(status="pending", approval=approval)
 
+    def get(self, approval_id: str) -> ToolApproval | None:
+        return self._store.get(approval_id)
+
     def list_pending(self, channel: str | None = None) -> list[ToolApproval]:
         return self._store.list_pending(channel=channel)
 

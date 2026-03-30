@@ -19,6 +19,7 @@ from pathlib import Path
 
 from duckdome.wrapper.injector import inject
 from duckdome.wrapper.mcp_config import generate_gemini_settings, generate_mcp_config
+from duckdome.wrapper.mcp_proxy import McpProxy
 from duckdome.wrapper.providers import build_launch_args
 from duckdome.wrapper.queue import read_queue_entries
 
@@ -119,6 +120,7 @@ class AgentProcess:
     agent_type: str
     proc: subprocess.Popen | None = None
     pid: int | None = None
+    proxy: McpProxy | None = None
     queue_thread: threading.Thread | None = None
     stop_event: threading.Event = field(default_factory=threading.Event)
     ready_event: threading.Event = field(default_factory=threading.Event)
@@ -133,11 +135,13 @@ class AgentProcessManager:
         data_dir: Path,
         mcp_port: int = 8200,
         mcp_host: str = "127.0.0.1",
+        app_port: int = 8000,
     ) -> None:
         self._data_dir = data_dir
         self._data_dir.mkdir(parents=True, exist_ok=True)
         self._config_dir = data_dir / "mcp-configs"
         self._mcp_url = f"http://{mcp_host}:{mcp_port}/mcp"
+        self._app_port = app_port
         self._agents: dict[str, AgentProcess] = {}
         self._lock = threading.Lock()
 
@@ -156,19 +160,31 @@ class AgentProcessManager:
                 logger.info("[%s] already running (pid=%s)", agent_type, self._agents[agent_type].pid)
                 return False
 
-        # Generate MCP config (provider-specific format)
+        # Start MCP proxy for this agent (gates tool calls through approval)
+        proxy = McpProxy(
+            upstream_url=self._mcp_url,
+            agent_name=agent_type,
+            app_port=self._app_port,
+        )
+        if not proxy.start():
+            logger.error("[%s] failed to start MCP proxy", agent_type)
+            return False
+        proxy_mcp_url = proxy.mcp_url
+        logger.info("[%s] MCP proxy at %s", agent_type, proxy_mcp_url)
+
+        # Generate MCP config pointing to the proxy (not the real MCP server)
         if agent_type == "gemini":
             mcp_config_path = generate_gemini_settings(
-                self._config_dir, agent_type, self._mcp_url
+                self._config_dir, agent_type, proxy_mcp_url
             )
         else:
             mcp_config_path = generate_mcp_config(
-                self._config_dir, agent_type, self._mcp_url
+                self._config_dir, agent_type, proxy_mcp_url
             )
 
         # Build CLI args
         launch = build_launch_args(
-            agent_type, mcp_config_path, cwd, mcp_url=self._mcp_url
+            agent_type, mcp_config_path, cwd, mcp_url=proxy_mcp_url
         )
 
         # Resolve .cmd shims to the underlying node command on Windows.
@@ -186,7 +202,7 @@ class AgentProcessManager:
         if sys.platform == "win32":
             creation_flags = subprocess.CREATE_NEW_CONSOLE
 
-        agent_proc = AgentProcess(agent_type=agent_type)
+        agent_proc = AgentProcess(agent_type=agent_type, proxy=proxy)
 
         def _run_loop():
             while not agent_proc.stop_event.is_set():
@@ -252,6 +268,8 @@ class AgentProcessManager:
                 agent_proc.proc.wait(timeout=10)
             except subprocess.TimeoutExpired:
                 agent_proc.proc.kill()
+        if agent_proc.proxy:
+            agent_proc.proxy.stop()
         return True
 
     def stop_all(self) -> None:
