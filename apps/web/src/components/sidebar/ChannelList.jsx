@@ -6,10 +6,10 @@ export function ChannelList({ channels, activeChannel, onSelect, onDelete }) {
     <div>
       {channels.map((ch) => (
         <ChannelRow
-          key={ch.name}
+          key={ch.id || ch.name}
           channel={ch}
-          active={activeChannel === ch.name}
-          onSelect={() => onSelect(ch.name)}
+          active={activeChannel === (ch.id || ch.name)}
+          onSelect={() => onSelect(ch.id || ch.name)}
           onDelete={() => onDelete(ch.name)}
         />
       ))}

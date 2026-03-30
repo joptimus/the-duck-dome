@@ -406,17 +406,20 @@ export default function ChannelShell() {
       if (!activeChannelId || !type) {
         return;
       }
+      const resolvedChannelId =
+        channels.find((channel) => channel.id === activeChannelId || channel.name === activeChannelId)?.id
+        || activeChannelId;
       try {
-        await addChannelAgent(activeChannelId, type);
-        const refreshed = await getChannelAgents(activeChannelId);
-        setAgents(normalizeAgents(refreshed, activeChannelId));
+        await addChannelAgent(resolvedChannelId, type);
+        const refreshed = await getChannelAgents(resolvedChannelId);
+        setAgents(normalizeAgents(refreshed, resolvedChannelId));
         setAgentError(null);
       } catch (error) {
         console.error("Failed to add agent:", error);
         setAgentError("Failed to add agent");
       }
     },
-    [activeChannelId],
+    [activeChannelId, channels],
   );
 
   const onSend = (text) => {

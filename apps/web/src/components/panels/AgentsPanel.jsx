@@ -4,7 +4,6 @@ import { ElectricPulse } from "../effects/ElectricPulse";
 import {
   AgentLogo,
   EditIcon,
-  FolderIcon,
   PlayIcon,
   PlusIcon,
   PowerIcon,
@@ -118,20 +117,6 @@ export function AgentsPanel({
                     <PlayIcon size={10} color="var(--success)" />
                   )}
                 </button>
-              </div>
-
-              <div className={styles.fieldGroup}>
-                <div className={styles.fieldLabel}>
-                  <FolderIcon size={10} color="var(--text-muted)" />
-                  Working directory
-                </div>
-                <select className={styles.repoSelect} value={agent.repo} disabled onChange={() => {}}>
-                  {repos.map((repo) => (
-                    <option key={repo} value={repo}>
-                      {repo}
-                    </option>
-                  ))}
-                </select>
               </div>
 
               <div className={styles.fieldGroup}>
