@@ -1,0 +1,29 @@
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  margin: 4px 0;
+}
+
+.lineLeft {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--border));
+}
+
+.lineRight {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, var(--border), transparent);
+}
+
+.label {
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: var(--ls-xl);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
