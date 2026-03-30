@@ -108,53 +108,61 @@ export function Composer({ onSchedule, onSendMessage, initialValue = "" }) {
   function handleKeyDown(event) {
     if (showSlash) {
       if (!filteredCommands.length) {
+        if (event.key === "Escape") {
+          setShowSlash(false);
+          return;
+        }
+        // fall through so Enter can reach submit logic below
+      } else {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setSelectedIdx((prev) => Math.min(prev + 1, filteredCommands.length - 1));
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setSelectedIdx((prev) => Math.max(prev - 1, 0));
+        } else if (event.key === "Tab" || event.key === "Enter") {
+          event.preventDefault();
+          if (filteredCommands[selectedIdx]) {
+            selectCommand(filteredCommands[selectedIdx]);
+          }
+        } else if (event.key === "Escape") {
+          setShowSlash(false);
+        }
         return;
       }
-
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setSelectedIdx((prev) => Math.min(prev + 1, filteredCommands.length - 1));
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setSelectedIdx((prev) => Math.max(prev - 1, 0));
-      } else if (event.key === "Tab" || event.key === "Enter") {
-        event.preventDefault();
-        if (filteredCommands[selectedIdx]) {
-          selectCommand(filteredCommands[selectedIdx]);
-        }
-      } else if (event.key === "Escape") {
-        setShowSlash(false);
-      }
-      return;
     }
 
     if (showMention) {
       const hasAll = "all".includes(mentionFilter);
       const totalItems = filteredMentions.length + (hasAll ? 1 : 0);
       if (!totalItems) {
+        if (event.key === "Escape") {
+          setShowMention(false);
+          return;
+        }
+        // fall through so Enter can reach submit logic below
+      } else {
+        if (event.key === "ArrowDown") {
+          event.preventDefault();
+          setSelectedIdx((prev) => Math.min(prev + 1, totalItems - 1));
+        } else if (event.key === "ArrowUp") {
+          event.preventDefault();
+          setSelectedIdx((prev) => Math.max(prev - 1, 0));
+        } else if (event.key === "Tab" || event.key === "Enter") {
+          event.preventDefault();
+          if (hasAll && selectedIdx === 0) {
+            selectMention("all");
+          } else {
+            const mentionIndex = hasAll ? selectedIdx - 1 : selectedIdx;
+            if (filteredMentions[mentionIndex]) {
+              selectMention(filteredMentions[mentionIndex][0]);
+            }
+          }
+        } else if (event.key === "Escape") {
+          setShowMention(false);
+        }
         return;
       }
-
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setSelectedIdx((prev) => Math.min(prev + 1, totalItems - 1));
-      } else if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setSelectedIdx((prev) => Math.max(prev - 1, 0));
-      } else if (event.key === "Tab" || event.key === "Enter") {
-        event.preventDefault();
-        if (hasAll && selectedIdx === 0) {
-          selectMention("all");
-        } else {
-          const mentionIndex = hasAll ? selectedIdx - 1 : selectedIdx;
-          if (filteredMentions[mentionIndex]) {
-            selectMention(filteredMentions[mentionIndex][0]);
-          }
-        }
-      } else if (event.key === "Escape") {
-        setShowMention(false);
-      }
-      return;
     }
 
     if (event.key === "Enter" && !event.shiftKey) {
@@ -276,7 +284,7 @@ export function Composer({ onSchedule, onSendMessage, initialValue = "" }) {
       </div>
 
       <div className={styles.helper}>
-        Enter to send · Shift+Enter for newline · Paste/drop images · Mic for voice · Type{" "}
+        Enter to send · Paste/drop images · Mic for voice · Type{" "}
         <span className={styles.hint}>/</span> or <span className={styles.hint}>@</span> for autocomplete
       </div>
     </div>
