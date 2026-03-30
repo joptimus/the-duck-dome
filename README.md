@@ -4,24 +4,29 @@ A local-first desktop app for coordinating multiple AI agents (Claude, Codex, Ge
 
 DuckDome gives you channels where you can mention agents, track whether they responded, manage permissions, and compare results — all persisted locally.
 
-> **Status:** Active development. Core chat, agent runtime, and reliability tracking are working. See [Roadmap](#roadmap) for what's next.
+> **Status:** Core feature-complete. Backend and UI migration from [agentchattr](https://github.com/joptimus/agentchattr) are done. All agent coordination, MCP tooling, tool approvals, and the full design-system UI are running on main.
 
 ## Features
 
-- **Multi-agent chat** — Talk to Claude, Codex, and Gemini in shared channels using `@mentions`
+- **Multi-agent chat** — Talk to Claude, Codex, and Gemini in shared channels using `@mentions` with autocomplete
 - **Channel-scoped agents** — Bind agents to channels, optionally linked to a local repo
 - **Trigger system** — Mentions create trackable triggers that agents claim and execute
 - **Delivery tracking** — Every directed message has a state: `sent` → `seen` → `responded` → `resolved` or `timeout`
+- **Tool approvals** — Approve or deny agent tool calls inline in chat, with per-tool auto-approve policies
+- **MCP bridge** — Full MCP HTTP transport (port 8200) exposing `chat_send`, `chat_read`, `chat_join`, `chat_rules`, and more
+- **Jobs system** — Scheduled and one-shot jobs with a dedicated panel UI
+- **Rules system** — Channel-level rules reviewable and approvable from the UI
+- **Composer** — Rich message input with slash commands and `@mention` popups
+- **Session launcher** — Start coordinated multi-agent sessions from the UI
+- **Agent management panel** — Start, stop, add, and remove channel-bound agents
+- **Activity, agents, jobs, rules, and settings panels** — Full right-panel suite accessible from the top bar
 - **Claude runner** — One-shot CLI execution via `claude --print`, with bounded context and repo-aware working directory
 - **Local persistence** — JSONL-based storage in `~/.duckdome/data/`, survives restarts
 - **Loop guard** — Detects and prevents infinite agent-to-agent mention chains
 
 ### Planned
 
-- Tool approvals and permission matrix
-- MCP bridge and diagnostics
 - Arena mode (agent vs agent comparison with scoring)
-- Session templates and workflow tools
 - Export/import
 
 ## Architecture
@@ -29,17 +34,33 @@ DuckDome gives you channels where you can mention agents, track whether they res
 ```text
 the-duck-dome/
 ├── apps/
-│   ├── web/          React UI (Vite)
-│   └── desktop/      Electron shell
-├── backend/          Python API (FastAPI)
+│   ├── web/                    React UI (Vite)
+│   │   └── src/
+│   │       ├── components/     Design system components
+│   │       │   ├── chat/       ChatTimeline, Composer, MessageBubble, ToolApprovalCard, …
+│   │       │   ├── layout/     AppShell
+│   │       │   ├── sidebar/    Sidebar, ChannelList, RepoList
+│   │       │   ├── topbar/     TopBar, PendingApprovalPill
+│   │       │   ├── panels/     ActivityPanel, AgentsPanel, JobsPanel, RulesPanel, SettingsPanel, RightPanel
+│   │       │   ├── modals/     SessionLauncher, ScheduleModal
+│   │       │   ├── effects/    ParticleField, ElectricPulse, AmbientOrbs
+│   │       │   ├── icons/      30+ SVG icon exports
+│   │       │   └── primitives/ Dot, Waveform, SectionLabel, ToolbarBtn, …
+│   │       ├── features/
+│   │       │   └── channel-shell/  ChannelShell (data layer: state, WebSocket, API)
+│   │       ├── tokens/         CSS custom properties (colors, typography, animations)
+│   │       └── constants/      agents.js, composer.js
+│   └── desktop/                Electron shell
+├── backend/                    Python API (FastAPI, port 8000)
 │   └── src/duckdome/
-│       ├── models/   Pydantic data types
-│       ├── stores/   JSONL persistence
-│       ├── services/ Business logic
-│       ├── runner/   Agent execution (Claude CLI)
-│       └── routes/   REST endpoints
-├── docs/             Plans and design docs
-└── scripts/          Dev tooling
+│       ├── models/             Pydantic data types
+│       ├── stores/             JSONL persistence (~/.duckdome/data/)
+│       ├── services/           Business logic
+│       ├── runner/             Agent execution (Claude/Codex/Gemini CLI)
+│       ├── mcp/                MCP HTTP transport (port 8200) + bridge
+│       └── routes/             REST + WebSocket endpoints
+├── docs/                       Plans and design docs
+└── scripts/                    Dev tooling
 ```
 
 **Layer rules:**
@@ -117,27 +138,35 @@ The backend exposes a REST API at `http://localhost:8000`. Key endpoints:
 |--------|------|-------------|
 | `GET` | `/api/channels` | List channels |
 | `POST` | `/api/channels` | Create a channel |
-| `GET` | `/api/messages?channel=...` | List messages in a channel |
-| `POST` | `/api/messages` | Send a message |
+| `GET` | `/api/channels/{id}/messages` | List messages in a channel |
+| `POST` | `/api/channels/{id}/messages` | Send a message |
+| `GET` | `/api/channels/{id}/agents` | List channel-bound agents |
+| `GET` | `/api/channels/{id}/triggers` | List triggers for a channel |
 | `POST` | `/api/runners/execute` | Execute next pending trigger |
+| `GET` | `/api/jobs` | List scheduled jobs |
+| `POST` | `/api/jobs` | Create a job |
+| `GET` | `/api/rules` | List channel rules |
+| `POST` | `/api/tool-approvals` | Submit a tool approval decision |
+| `WS` | `/ws` | WebSocket for real-time events |
+| MCP | `http://localhost:8200` | MCP HTTP transport for agent tooling |
 
 ## Roadmap
 
-DuckDome is being rebuilt from a legacy project ([agentchattr](https://github.com/joptimus/agentchattr)) with a focus on reliability and clean architecture.
+DuckDome was rebuilt from [agentchattr](https://github.com/joptimus/agentchattr) with a focus on reliability and clean architecture. The migration is complete.
 
-| Phase | Goal | Status |
-|-------|------|--------|
-| 0 | Foundation and guardrails | Done |
-| 1 | Legacy discovery and feature lock | Done |
-| 2 | Core runtime spine | Done |
-| 3 | Reliability layer | In progress |
-| 4 | Human control layer | Planned |
-| 5 | MCP and agent management | Planned |
-| 6 | Workflow and productivity | Planned |
-| 7 | Arena mode and differentiators | Planned |
-| 8 | Hardening and cleanup | Planned |
-
-See [`docs/milestone-plan.md`](docs/milestone-plan.md) for details.
+| Area | Status |
+|------|--------|
+| Backend — core runtime, WebSocket, persistence | Done |
+| Backend — MCP bridge and HTTP transport | Done |
+| Backend — tool approvals, rules, jobs system | Done |
+| Backend — multi-runner (Claude, Codex, Gemini) | Done |
+| UI — design system (tokens, icons, effects, primitives) | Done |
+| UI — layout, sidebar, top bar, composer | Done |
+| UI — chat timeline, message types, tool approval cards | Done |
+| UI — all panels (activity, agents, jobs, rules, settings) | Done |
+| UI — modals (session launcher, scheduler) | Done |
+| Arena mode (agent vs agent comparison with scoring) | Planned |
+| Export/import | Planned |
 
 ## Contributing
 
