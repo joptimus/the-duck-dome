@@ -69,6 +69,10 @@ class RepoService:
         self._store.unhide(resolved)
         return {"path": resolved, "mode": mode}
 
+    def list_sources(self) -> list[dict]:
+        """Return all configured repo sources."""
+        return self._store.list_sources()
+
     def remove_source(self, path: str) -> None:
         """Hide a repo path and remove matching sources."""
         resolved = str(Path(path).resolve())

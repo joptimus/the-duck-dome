@@ -149,7 +149,6 @@ export default function CreateChannelModal({ open, onClose, onCreate, repos = []
       await onCreate({
         name: slugifiedName,
         type,
-        repoPath: isRepo ? selectedRepo?.path || null : null,
         repo_path: isRepo ? selectedRepo?.path || null : null,
       });
       closeModal();

@@ -80,6 +80,12 @@
   font-family: var(--font-mono);
   font-size: var(--fs-micro);
   color: var(--text-muted);
+  display: none;
+}
+
+.row:hover .repoPath,
+.row:focus-within .repoPath {
+  display: block;
   animation: fadeUp 0.15s ease;
 }
 
@@ -87,7 +93,7 @@
   background: none;
   border: none;
   cursor: pointer;
-  opacity: 0.4;
+  opacity: 0;
   display: flex;
   align-items: center;
   padding: 2px;
@@ -95,6 +101,12 @@
   transition: opacity 0.15s;
 }
 
-.deleteBtn:hover {
+.row:hover .deleteBtn,
+.row:focus-within .deleteBtn {
+  opacity: 0.4;
+}
+
+.row:hover .deleteBtn:hover,
+.row:focus-within .deleteBtn:hover {
   opacity: 1;
 }

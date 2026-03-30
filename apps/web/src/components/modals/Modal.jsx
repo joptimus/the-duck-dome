@@ -30,7 +30,7 @@ export function Modal({
           <div className={styles.header}>
             <div className={styles.title}>{title}</div>
             <button className={styles.closeBtn} onClick={onClose}>
-              ×
+              &times;
             </button>
           </div>
         )}

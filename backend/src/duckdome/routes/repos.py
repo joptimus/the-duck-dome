@@ -40,7 +40,7 @@ class RemoveRepoRequest(BaseModel):
 def list_repos():
     svc = _get_service()
     return {
-        "sources": svc._store.list_sources(),
+        "sources": svc.list_sources(),
         "repos": svc.collect_repos(),
     }
 
@@ -51,7 +51,7 @@ def add_repo(body: AddRepoRequest):
     try:
         source = svc.add_source(body.path)
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     return {"ok": True, "source": source}
 
 
