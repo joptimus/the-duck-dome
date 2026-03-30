@@ -1,0 +1,45 @@
+.header {
+  padding: 0 14px;
+  margin-bottom: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.headerIcons {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.headerIcon {
+  cursor: pointer;
+  opacity: 0.5;
+  display: flex;
+}
+
+.headerIcon:hover {
+  opacity: 0.8;
+}
+
+.row {
+  padding: 5px 14px 5px 16px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  cursor: pointer;
+}
+
+.row:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.repoName {
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -1,0 +1,83 @@
+.row {
+  padding: 6px 14px 6px 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  position: relative;
+  transition: all 0.12s;
+}
+
+.row:hover {
+  background: rgba(0, 212, 255, 0.03);
+}
+
+.active {
+  background: rgba(0, 212, 255, 0.047); /* blue at 0C opacity */
+}
+
+.activeBar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--gradient);
+}
+
+.hash {
+  font-family: var(--font-mono);
+  font-size: var(--fs-xs);
+  color: var(--text-muted);
+}
+
+.hashActive {
+  color: var(--blue);
+}
+
+.name {
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nameActive {
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.unreadBadge {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: linear-gradient(135deg, var(--purple), var(--error));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  font-family: var(--font-label);
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.38);
+  padding: 0 5px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.deleteBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  line-height: 1;
+}
+
+.deleteBtn:hover {
+  color: var(--error);
+}
