@@ -8,3 +8,15 @@ ReactDOM.createRoot(document.getElementById("root")).render(
     <App />
   </React.StrictMode>,
 );
+
+// Dismiss splash screen after progress bar animation completes (~4.05s)
+const splash = document.getElementById("app-splash");
+if (splash) {
+  const fill = splash.querySelector(".splash-bar-fill");
+  if (fill) {
+    fill.addEventListener("animationend", () => {
+      splash.classList.add("hidden");
+      splash.addEventListener("transitionend", () => splash.remove(), { once: true });
+    }, { once: true });
+  }
+}
