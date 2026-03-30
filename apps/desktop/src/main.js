@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog } = require("electron");
 const path = require("path");
 
 const DEV_URL = "http://localhost:5173";
@@ -16,6 +16,18 @@ function createWindow() {
 
   win.loadURL(DEV_URL);
 }
+
+ipcMain.handle("desktop:pick-directory", async (_event, opts = {}) => {
+  const result = await dialog.showOpenDialog({
+    properties: ["openDirectory"],
+    title: opts.title || "Select Repository Folder",
+    defaultPath: opts.defaultPath,
+  });
+  return {
+    canceled: result.canceled,
+    path: result.filePaths?.[0] || undefined,
+  };
+});
 
 const { startBackend, stopBackend } = require("./backend");
 
