@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   createChannel,
   getChannel,
@@ -7,6 +7,9 @@ import {
   getChannels,
   getChannelTriggers,
   sendChannelMessage,
+  getRepos,
+  addRepoSource,
+  removeRepoSource,
 } from "./api";
 import { createWsClient } from "../../api/ws";
 import { mockMessagesByChannelId } from "./mockData";
@@ -147,6 +150,7 @@ const WS_URL = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000")
 
 export default function ChannelShell() {
   const [channels, setChannels] = useState([]);
+  const [repos, setRepos] = useState([]);
   const [activeChannelId, setActiveChannelId] = useState(null);
   const [activeChannel, setActiveChannel] = useState(null);
   const [agents, setAgents] = useState([]);
@@ -165,6 +169,41 @@ export default function ChannelShell() {
   const [sessionLauncherOpen, setSessionLauncherOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 
+  const fetchRepos = useCallback(async () => {
+    try {
+      const data = await getRepos();
+      setRepos(
+        (data.repos ?? []).map((r) => ({
+          name: r.name,
+          path: r.path,
+          active: false,
+        }))
+      );
+    } catch {
+      // API unavailable — keep current list
+    }
+  }, []);
+
+  const handleAddRepo = useCallback(async (path) => {
+    await addRepoSource(path);
+    await fetchRepos();
+  }, [fetchRepos]);
+
+  const handleRemoveRepo = useCallback(async (path) => {
+    await removeRepoSource(path);
+    await fetchRepos();
+  }, [fetchRepos]);
+
+  const handleBrowseRepo = useCallback(async () => {
+    if (window.duckdome?.pickDirectory) {
+      const result = await window.duckdome.pickDirectory();
+      if (!result.canceled && result.path) return result.path;
+      return null;
+    }
+    const entered = window.prompt('Enter absolute path to repo:') ?? '';
+    return entered.trim() || null;
+  }, []);
+
   useEffect(() => {
     let ignore = false;
 
@@ -178,10 +217,11 @@ export default function ChannelShell() {
     }
 
     loadChannels();
+    fetchRepos();
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [fetchRepos]);
 
   useEffect(() => {
     if (!activeChannelId) return undefined;
@@ -346,12 +386,6 @@ export default function ChannelShell() {
     [mergedAgents],
   );
 
-  // Derive repo list from channels for Sidebar
-  const repos = useMemo(
-    () => channels.filter((ch) => ch.type === "repo").map((ch) => ch.repo_path).filter(Boolean),
-    [channels],
-  );
-
   // Pending approval count for TopBar pill
   const pendingCount = useMemo(
     () => activeMessages.filter((m) => m.sender_type === "tool_approval" && m.status === "pending").length,
@@ -427,6 +461,10 @@ export default function ChannelShell() {
             onSelectChannel={setActiveChannelId}
             onCreateChannel={() => setCreateOpen(true)}
             onSessionLaunch={() => setSessionLauncherOpen(true)}
+            onAddRepo={handleAddRepo}
+            onRemoveRepo={handleRemoveRepo}
+            onRefreshRepos={fetchRepos}
+            onBrowseRepo={handleBrowseRepo}
           />
         }
         panel={renderPanel()}
