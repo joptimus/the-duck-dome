@@ -438,11 +438,22 @@ export default function ChannelShell() {
         || activeChannelId;
 
       try {
-        if (agent.running) {
-          await deregisterRuntimeAgent(resolvedChannelId, agent.agent);
-        } else {
-          await registerRuntimeAgent(resolvedChannelId, agent.agent);
+        const runtimeResult = agent.running
+          ? await deregisterRuntimeAgent(resolvedChannelId, agent.agent)
+          : await registerRuntimeAgent(resolvedChannelId, agent.agent);
+
+        if (runtimeResult?.__localFallback) {
+          setAgents((prev) =>
+            prev.map((item) =>
+              item.agent_type === agent.agent
+                ? { ...item, status: runtimeResult.status === "idle" ? "idle" : "offline" }
+                : item,
+            ),
+          );
+          setAgentError(null);
+          return;
         }
+
         const refreshed = await getChannelAgents(resolvedChannelId);
         setAgents(normalizeAgents(refreshed, resolvedChannelId));
         setAgentError(null);

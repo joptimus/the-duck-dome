@@ -97,25 +97,47 @@ export async function removeChannelAgent(channelId, agentType) {
 }
 
 export async function registerRuntimeAgent(channelId, agentType) {
-  return request("/api/agents/register", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  try {
+    return await request("/api/agents/register", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel_id: channelId,
+        agent_type: agentType,
+      }),
+    });
+  } catch (error) {
+    if (!error?.isNetworkError && !(error?.status >= 500)) throw error;
+    return {
+      id: `${channelId}:${agentType}`,
       channel_id: channelId,
       agent_type: agentType,
-    }),
-  });
+      status: "idle",
+      __localFallback: true,
+    };
+  }
 }
 
 export async function deregisterRuntimeAgent(channelId, agentType) {
-  return request("/api/agents/deregister", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  try {
+    return await request("/api/agents/deregister", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        channel_id: channelId,
+        agent_type: agentType,
+      }),
+    });
+  } catch (error) {
+    if (!error?.isNetworkError && !(error?.status >= 500)) throw error;
+    return {
+      id: `${channelId}:${agentType}`,
       channel_id: channelId,
       agent_type: agentType,
-    }),
-  });
+      status: "offline",
+      __localFallback: true,
+    };
+  }
 }
 
 export async function getChannelTriggers(channelId) {
