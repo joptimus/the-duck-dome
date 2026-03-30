@@ -90,6 +90,34 @@ export async function addChannelAgent(channelId, agentType) {
   }
 }
 
+export async function removeChannelAgent(channelId, agentType) {
+  return request(`/api/channels/${encodeURIComponent(channelId)}/agents/${encodeURIComponent(agentType)}`, {
+    method: "DELETE",
+  });
+}
+
+export async function registerRuntimeAgent(channelId, agentType) {
+  return request("/api/agents/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      channel_id: channelId,
+      agent_type: agentType,
+    }),
+  });
+}
+
+export async function deregisterRuntimeAgent(channelId, agentType) {
+  return request("/api/agents/deregister", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      channel_id: channelId,
+      agent_type: agentType,
+    }),
+  });
+}
+
 export async function getChannelTriggers(channelId) {
   try {
     return await request(`/api/channels/${encodeURIComponent(channelId)}/triggers`);

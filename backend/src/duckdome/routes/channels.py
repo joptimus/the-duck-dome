@@ -74,3 +74,15 @@ def add_agent(channel_id: str, body: AddAgentRequest):
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return inst.model_dump()
+
+
+@router.delete("/{channel_id}/agents/{agent_type}", status_code=200)
+def remove_agent(channel_id: str, agent_type: str):
+    svc = _get_service()
+    try:
+        removed = svc.remove_agent(channel_id=channel_id, agent_type=agent_type)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    if not removed:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    return {"removed": True}

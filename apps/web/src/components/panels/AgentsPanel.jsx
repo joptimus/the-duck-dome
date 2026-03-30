@@ -81,7 +81,7 @@ export function AgentsPanel({
 
           const isEditing = editingPrompt === index;
           return (
-            <div key={agent.agent} className={styles.agentCard} style={{ opacity: agent.running ? 1 : 0.6 }}>
+            <div key={agent.id || agent.agent} className={styles.agentCard} style={{ opacity: agent.running ? 1 : 0.6 }}>
               <div className={styles.agentHeaderRow}>
                 <div
                   className={styles.avatar}
@@ -109,7 +109,7 @@ export function AgentsPanel({
                 <button
                   type="button"
                   className={`${styles.toggleBtn} ${agent.running ? styles.stopBtn : styles.startBtn}`}
-                  onClick={() => onToggleAgent?.(index)}
+                  onClick={() => onToggleAgent?.(agent)}
                 >
                   {agent.running ? (
                     <StopIcon size={12} color="var(--error)" />
@@ -166,7 +166,7 @@ export function AgentsPanel({
 
               {!agent.running ? (
                 <div className={styles.removeRow}>
-                  <button type="button" className={styles.removeBtn} onClick={() => onRemoveAgent?.(index)}>
+                  <button type="button" className={styles.removeBtn} onClick={() => onRemoveAgent?.(agent)}>
                     <TrashIcon size={10} color="currentColor" />
                     Remove from channel
                   </button>

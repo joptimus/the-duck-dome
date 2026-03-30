@@ -2,11 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addChannelAgent,
   createChannel,
+  deregisterRuntimeAgent,
   getChannel,
   getChannelAgents,
   getChannelMessages,
   getChannels,
   getChannelTriggers,
+  registerRuntimeAgent,
+  removeChannelAgent,
   sendChannelMessage,
   getRepos,
   addRepoSource,
@@ -381,8 +384,10 @@ export default function ChannelShell() {
   const channelAgents = useMemo(
     () =>
       mergedAgents.map((a) => ({
+        id: a.id,
         agent: a.agent_type,
         running: a.status === "working" || a.status === "idle",
+        prompt: a.current_task || "",
       })),
     [mergedAgents],
   );
@@ -411,12 +416,60 @@ export default function ChannelShell() {
         || activeChannelId;
       try {
         await addChannelAgent(resolvedChannelId, type);
+        await registerRuntimeAgent(resolvedChannelId, type);
         const refreshed = await getChannelAgents(resolvedChannelId);
         setAgents(normalizeAgents(refreshed, resolvedChannelId));
         setAgentError(null);
       } catch (error) {
         console.error("Failed to add agent:", error);
         setAgentError("Failed to add agent");
+      }
+    },
+    [activeChannelId, channels],
+  );
+
+  const handleToggleAgent = useCallback(
+    async (agent) => {
+      if (!activeChannelId || !agent?.agent) {
+        return;
+      }
+      const resolvedChannelId =
+        channels.find((channel) => channel.id === activeChannelId || channel.name === activeChannelId)?.id
+        || activeChannelId;
+
+      try {
+        if (agent.running) {
+          await deregisterRuntimeAgent(resolvedChannelId, agent.agent);
+        } else {
+          await registerRuntimeAgent(resolvedChannelId, agent.agent);
+        }
+        const refreshed = await getChannelAgents(resolvedChannelId);
+        setAgents(normalizeAgents(refreshed, resolvedChannelId));
+        setAgentError(null);
+      } catch (error) {
+        console.error("Failed to toggle agent:", error);
+        setAgentError("Failed to toggle agent");
+      }
+    },
+    [activeChannelId, channels],
+  );
+
+  const handleRemoveAgent = useCallback(
+    async (agent) => {
+      if (!activeChannelId || !agent?.agent) {
+        return;
+      }
+      const resolvedChannelId =
+        channels.find((channel) => channel.id === activeChannelId || channel.name === activeChannelId)?.id
+        || activeChannelId;
+      try {
+        await removeChannelAgent(resolvedChannelId, agent.agent);
+        const refreshed = await getChannelAgents(resolvedChannelId);
+        setAgents(normalizeAgents(refreshed, resolvedChannelId));
+        setAgentError(null);
+      } catch (error) {
+        console.error("Failed to remove agent:", error);
+        setAgentError("Failed to remove agent");
       }
     },
     [activeChannelId, channels],
@@ -460,6 +513,8 @@ export default function ChannelShell() {
             agents={channelAgents}
             repos={repos}
             onAddAgent={handleAddAgent}
+            onToggleAgent={handleToggleAgent}
+            onRemoveAgent={handleRemoveAgent}
           />
         );
       case "jobs":

@@ -32,13 +32,14 @@ export default function AddRepoForm({ onAdd, onCancel, onBrowse }) {
   return (
     <div className={styles.container}>
       <div className={styles.card}>
-        <label className={styles.label}>
+        <label className={styles.label} htmlFor="repo-path-input">
           <FolderIcon size={10} color="var(--text-muted)" />
           <span>Path to repository</span>
         </label>
 
         <div className={styles.inputWrap}>
           <input
+            id="repo-path-input"
             className={`${styles.input} ${hasPath ? styles.inputFilled : ''}`}
             type="text"
             placeholder="/Users/james/DevApps/..."
@@ -47,7 +48,7 @@ export default function AddRepoForm({ onAdd, onCancel, onBrowse }) {
             onKeyDown={handleKeyDown}
             autoFocus
           />
-          <button className={styles.browseBtn} onClick={handleBrowse} title="Browse">
+          <button className={styles.browseBtn} onClick={handleBrowse} title="Browse" aria-label="Browse for folder">
             <FolderIcon size={15} color="var(--purple)" />
           </button>
         </div>

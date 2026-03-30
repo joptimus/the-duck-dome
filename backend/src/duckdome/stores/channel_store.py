@@ -92,3 +92,10 @@ class ChannelStore(BaseChannelStore):
         self._agents[agent_id] = agent
         self._save_agents()
         return agent
+
+    def remove_agent(self, agent_id: str) -> bool:
+        if agent_id not in self._agents:
+            return False
+        del self._agents[agent_id]
+        self._save_agents()
+        return True

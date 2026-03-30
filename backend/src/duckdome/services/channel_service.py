@@ -46,3 +46,9 @@ class ChannelService:
     def get_agent_types(self, channel_id: str) -> list[str]:
         agents = self._store.list_agents(channel_id)
         return [a.agent_type for a in agents]
+
+    def remove_agent(self, channel_id: str, agent_type: str) -> bool:
+        if not self.validate_channel(channel_id):
+            raise ValueError(f"Channel not found: {channel_id}")
+        agent_id = f"{channel_id}:{agent_type}"
+        return self._store.remove_agent(agent_id)

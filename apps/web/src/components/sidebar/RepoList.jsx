@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { SectionLabel } from '../primitives/SectionLabel';
 import { FolderIcon, PlusIcon, XIcon, RefreshIcon, GitHubIcon } from '../icons/Icons';
 import AddRepoForm from './AddRepoForm';
@@ -11,14 +10,8 @@ function shortenPath(fullPath) {
 }
 
 function RepoRow({ name, path, active, onRemove }) {
-  const [hovered, setHovered] = useState(false);
-
   return (
-    <div
-      className={styles.row}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
+    <div className={styles.row}>
       <span className={styles.repoIcon}>
         <GitHubIcon size={14} color={active ? 'var(--purple)' : 'var(--text-muted)'} />
       </span>
@@ -26,19 +19,15 @@ function RepoRow({ name, path, active, onRemove }) {
         <span className={`${styles.repoName} ${active ? styles.repoNameActive : ''}`}>
           {name}
         </span>
-        {hovered && (
-          <span className={styles.repoPath}>{shortenPath(path)}</span>
-        )}
+        <span className={styles.repoPath}>{shortenPath(path)}</span>
       </div>
-      {hovered && (
-        <button
-          className={styles.deleteBtn}
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          title="Remove repo"
-        >
-          <XIcon size={12} color="var(--error)" />
-        </button>
-      )}
+      <button
+        className={styles.deleteBtn}
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+        title="Remove repo"
+      >
+        <XIcon size={12} color="var(--error)" />
+      </button>
     </div>
   );
 }
@@ -46,8 +35,15 @@ function RepoRow({ name, path, active, onRemove }) {
 export function RepoList({ repos, onAddRepo, onRemoveRepo, onRefreshRepos, onBrowseRepo }) {
   const [showForm, setShowForm] = useState(false);
 
-  const handleAdd = (path) => {
-    onAddRepo(path);
+  const handleBrowseHeader = async () => {
+    const picked = await onBrowseRepo();
+    if (picked) {
+      await onAddRepo(picked);
+    }
+  };
+
+  const handleAdd = async (path) => {
+    await onAddRepo(path);
     setShowForm(false);
   };
 
@@ -56,7 +52,7 @@ export function RepoList({ repos, onAddRepo, onRemoveRepo, onRefreshRepos, onBro
       <div className={styles.header}>
         <SectionLabel color="var(--purple)">Repos</SectionLabel>
         <div className={styles.headerIcons}>
-          <button className={styles.headerIconMuted} onClick={onBrowseRepo} title="Browse for folder">
+          <button className={styles.headerIconMuted} onClick={handleBrowseHeader} title="Browse for folder">
             <FolderIcon size={14} color="var(--text-muted)" />
           </button>
           <button
