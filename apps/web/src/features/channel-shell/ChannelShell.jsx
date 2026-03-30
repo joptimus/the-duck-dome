@@ -3,6 +3,7 @@ import {
   addChannelAgent,
   createChannel,
   deregisterRuntimeAgent,
+  executeRunner,
   getChannel,
   getChannelAgents,
   getChannelMessages,
@@ -129,6 +130,36 @@ function computeOpenByAgent(triggers) {
     counts[target] = (counts[target] || 0) + 1;
   }
   return counts;
+}
+
+function extractMentionTargets(text, availableAgents = []) {
+  const tags = String(text || "")
+    .toLowerCase()
+    .match(/@([a-z0-9_-]+)/g) || [];
+  if (tags.length === 0) return [];
+
+  const mentions = tags.map((tag) => tag.slice(1));
+  const unique = [];
+  const seen = new Set();
+
+  for (const mention of mentions) {
+    if (mention === "all") {
+      for (const agent of availableAgents) {
+        if (!seen.has(agent)) {
+          seen.add(agent);
+          unique.push(agent);
+        }
+      }
+      continue;
+    }
+
+    if (availableAgents.includes(mention) && !seen.has(mention)) {
+      seen.add(mention);
+      unique.push(mention);
+    }
+  }
+
+  return unique;
 }
 
 function mergeRuntimeAgents(agents, openByAgent) {
@@ -490,13 +521,24 @@ export default function ChannelShell() {
     if (!activeChannelId) {
       return Promise.reject(new Error("No active channel selected"));
     }
-    return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" }).catch(
-      (error) => {
+    return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" })
+      .then(async () => {
+        const targets = extractMentionTargets(
+          text,
+          mergedAgents.map((agent) => agent.agent_type),
+        );
+        if (targets.length === 0) {
+          return;
+        }
+        await Promise.allSettled(
+          targets.map((agentType) => executeRunner(activeChannelId, agentType)),
+        );
+      })
+      .catch((error) => {
         console.error("Failed to send message:", error);
         setMessagesError("Failed to send message");
         throw error;
-      },
-    );
+      });
   };
 
   const showChannel = activeChannel || channels.find((channel) => channel.id === activeChannelId) || null;

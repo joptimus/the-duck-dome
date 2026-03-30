@@ -83,15 +83,16 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     # Services
     channel_service = ChannelService(store=channel_store)
+    trigger_service = TriggerService(
+        trigger_store=trigger_store,
+        channel_store=channel_store,
+        ws_manager=ws_manager,
+    )
     message_service = MessageService(
         store=message_store,
         known_agents=DEFAULT_AGENTS,
         channel_service=channel_service,
-        ws_manager=ws_manager,
-    )
-    trigger_service = TriggerService(
-        trigger_store=trigger_store,
-        channel_store=channel_store,
+        trigger_service=trigger_service,
         ws_manager=ws_manager,
     )
     tool_approval_service = ToolApprovalService(

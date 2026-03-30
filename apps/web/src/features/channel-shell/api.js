@@ -172,6 +172,17 @@ export async function sendChannelMessage({ channelId, text, sender = "human" }) 
   });
 }
 
+export async function executeRunner(channelId, agentType) {
+  return request("/api/runners/execute", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      channel_id: channelId,
+      agent_type: agentType,
+    }),
+  });
+}
+
 export async function getRepos() {
   return request("/api/repos");
 }

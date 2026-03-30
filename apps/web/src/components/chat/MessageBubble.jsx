@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { agentMeta } from '../../constants/agents';
 import { MessageToolbar } from './MessageToolbar';
 import styles from './MessageBubble.module.css';
 
@@ -14,13 +15,24 @@ const AGENT_META = {
 
 function renderTextWithMentions(text) {
   const parts = text.split(/(@\w+)/g);
-  return parts.map((part, i) =>
-    part.startsWith('@') ? (
-      <span key={i} className={styles.mention}>{part}</span>
-    ) : (
-      part
-    )
-  );
+  return parts.map((part, i) => {
+    if (!part.startsWith('@')) return part;
+    const key = part.slice(1).toLowerCase();
+    const meta = agentMeta[key];
+    return (
+      <span
+        key={i}
+        className={styles.mention}
+        style={{
+          color: meta?.color || 'var(--blue)',
+          background: meta?.bg || 'rgba(0, 212, 255, 0.1)',
+          borderColor: meta?.border || 'rgba(0, 212, 255, 0.25)',
+        }}
+      >
+        {part}
+      </span>
+    );
+  });
 }
 
 function formatTime(ts) {

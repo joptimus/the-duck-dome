@@ -82,12 +82,14 @@ class MessageService:
         store: MessageStore,
         known_agents: list[str],
         channel_service: object | None = None,
+        trigger_service: object | None = None,
         ws_manager: ConnectionManager | None = None,
         max_hops: int = 4,
     ) -> None:
         self._store = store
         self._known_agents = [a.lower() for a in known_agents]
         self._channel_service = channel_service
+        self._trigger_service = trigger_service
         self._ws_manager = ws_manager
         self._loop_guard = LoopGuard(max_hops=max_hops)
         self._build_mention_regex()
@@ -203,6 +205,24 @@ class MessageService:
         )
         self._store.add(msg)
         self._broadcast({"type": "new_message", "message": msg.model_dump()})
+
+        if self._trigger_service is not None:
+            targets: list[str] = []
+            if msg.delivery is not None:
+                targets.append(msg.delivery.target)
+            elif msg.deliveries:
+                targets.extend([d.target for d in msg.deliveries])
+
+            for target in targets:
+                try:
+                    self._trigger_service.create_trigger(
+                        channel_id=channel,
+                        target_agent_type=target,
+                        source_message_id=msg.id,
+                    )
+                except ValueError:
+                    # Trigger creation is best-effort; message delivery still succeeds.
+                    continue
         return msg
 
     def _get_delivery_for_agent(
