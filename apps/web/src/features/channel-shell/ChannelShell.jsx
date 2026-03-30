@@ -3,7 +3,7 @@ import {
   addChannelAgent,
   createChannel,
   deregisterRuntimeAgent,
-  executeRunner,
+  triggerAgent,
   getChannel,
   getChannelAgents,
   getChannelMessages,
@@ -593,7 +593,7 @@ export default function ChannelShell() {
           return;
         }
         await Promise.allSettled(
-          targets.map((agentType) => executeRunner(activeChannelId, agentType)),
+          targets.map((agentType) => triggerAgent(agentType, "user", text, activeChannelId)),
         );
       })
       .catch((error) => {

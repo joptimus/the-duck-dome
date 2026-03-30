@@ -183,6 +183,19 @@ export async function executeRunner(channelId, agentType) {
   });
 }
 
+export async function triggerAgent(agentType, sender, text, channelId) {
+  return request("/api/wrapper/trigger", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agent_type: agentType,
+      sender,
+      text,
+      channel: channelId,
+    }),
+  });
+}
+
 export async function getRepos() {
   return request("/api/repos");
 }
