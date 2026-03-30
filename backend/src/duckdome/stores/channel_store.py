@@ -46,7 +46,7 @@ class ChannelStore(BaseChannelStore):
                 f.write(self._channels[cid].model_dump_json() + "\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.rename(self._channels_file)
+        tmp.replace(self._channels_file)
 
     def _save_agents(self) -> None:
         tmp = self._agents_file.with_suffix(".tmp")
@@ -55,7 +55,7 @@ class ChannelStore(BaseChannelStore):
                 f.write(agent.model_dump_json() + "\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.rename(self._agents_file)
+        tmp.replace(self._agents_file)
 
     def add_channel(self, channel: Channel) -> Channel:
         if channel.id in self._channels:
