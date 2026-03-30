@@ -1,26 +1,29 @@
 .strip {
   display: flex;
-  align-items: center;
-  gap: 14px;
-  padding: 6px 20px;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 6px 16px;
   border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  min-height: 28px;
+  align-items: center;
 }
 
-.agent {
-  display: flex;
+.item {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
+  font-family: var(--font-label, var(--font-body));
+  font-size: var(--fs-label, 11px);
 }
 
-.text {
-  font-family: var(--font-body);
-  font-size: var(--fs-xs);
-  color: var(--text-muted);
-  animation: textPulse 2s ease-in-out infinite;
+.label {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .text {
-    animation: none;
-  }
+.error {
+  color: var(--error);
+  font-family: var(--font-label, var(--font-body));
+  font-size: var(--fs-label, 11px);
 }

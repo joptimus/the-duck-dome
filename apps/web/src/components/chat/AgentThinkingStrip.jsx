@@ -1,27 +1,32 @@
-import { Dot } from '../primitives/Dot';
 import { agentMeta } from '../../constants/agents';
+import { Dot } from '../primitives/Dot';
 import styles from './AgentThinkingStrip.module.css';
 
-export function AgentThinkingStrip({ agents }) {
-  if (!agents || agents.length === 0) return null;
+export function AgentThinkingStrip({ agents = [], failure }) {
+  const workingAgents = agents.filter((a) => a.status === 'working');
+
+  if (workingAgents.length === 0 && !failure) {
+    return null;
+  }
 
   return (
     <div className={styles.strip}>
-      {agents.map((a) => {
-        const meta = agentMeta[a.agent_type];
-        if (!meta) return null;
+      {workingAgents.map((agent) => {
+        const meta = agentMeta[agent.agent_type] || {};
         return (
-          <div key={a.agent_type} className={styles.agent}>
-            <Dot color={meta.color} size={6} />
-            <span className={styles.text}>
-              <span style={{ color: meta.color, fontWeight: 500 }}>
-                {meta.label}
-              </span>{' '}
-              is {a.status}...
+          <span key={agent.id} className={styles.item}>
+            <Dot color={meta.color || 'var(--text-muted)'} size={6} pulse />
+            <span className={styles.label} style={{ color: meta.color }}>
+              {meta.label || agent.agent_type} is working...
             </span>
-          </div>
+          </span>
         );
       })}
+      {failure && (
+        <span className={styles.error}>
+          Claude failed: {failure}
+        </span>
+      )}
     </div>
   );
 }
