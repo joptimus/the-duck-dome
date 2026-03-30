@@ -222,9 +222,11 @@ class AgentProcessManager:
             for entry in entries:
                 channel = entry.get("channel", "general")
                 text = entry.get("text", "")
-                # Matches agentchattr injection format
+                # Tell the agent to use chat_join + chat_read tools (not "mcp read" which
+                # Claude Code now interprets as a resource read request)
                 injection = (
-                    f"mcp read #{channel} - you were mentioned, take appropriate action"
+                    f"Use the chat_join tool with channel=\"{channel}\" and agent_type=\"{agent_type}\", "
+                    f"then use chat_read to see messages, then respond with chat_send."
                 )
                 logger.info("[%s] injecting prompt for channel=%s", agent_type, channel)
                 try:
