@@ -113,3 +113,51 @@ class TestRepoService:
         store.add_source(str(projects), "root")
         svc.remove_source(str(projects / "alpha"))
         assert str((projects / "alpha").resolve()) in store.list_hidden()
+
+
+from fastapi.testclient import TestClient
+from duckdome.app import create_app
+
+
+@pytest.fixture
+def client(tmp_data):
+    app = create_app(data_dir=tmp_data)
+    return TestClient(app)
+
+
+class TestRepoRoutes:
+    def test_list_repos_empty(self, client):
+        resp = client.get("/api/repos")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["repos"] == []
+        assert data["sources"] == []
+
+    def test_add_and_list(self, client, tmp_data, tmp_path):
+        repo_dir = tmp_path / "myrepo"
+        repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()
+
+        resp = client.post("/api/repos/add", json={"path": str(repo_dir)})
+        assert resp.status_code == 200
+        assert resp.json()["ok"] is True
+
+        resp = client.get("/api/repos")
+        assert len(resp.json()["repos"]) == 1
+        assert resp.json()["repos"][0]["name"] == "myrepo"
+
+    def test_add_missing_path(self, client):
+        resp = client.post("/api/repos/add", json={"path": "/nonexistent/path"})
+        assert resp.status_code == 422
+
+    def test_remove(self, client, tmp_path):
+        repo_dir = tmp_path / "removeme"
+        repo_dir.mkdir()
+        (repo_dir / ".git").mkdir()
+
+        client.post("/api/repos/add", json={"path": str(repo_dir)})
+        resp = client.post("/api/repos/remove", json={"path": str(repo_dir)})
+        assert resp.status_code == 200
+
+        resp = client.get("/api/repos")
+        assert len(resp.json()["repos"]) == 0
