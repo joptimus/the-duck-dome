@@ -11,7 +11,7 @@ export function SessionBanner({ sessionId = 'DD-0424-A', agentCount = 3 }) {
         <span className={styles.divider} />
         <span className={styles.sessionId}>{sessionId}</span>
         <span className={styles.divider} />
-        <span className={styles.agentCount}>{agentCount} AGENTS</span>
+        <span className={styles.agentCount}>{agentCount} {agentCount === 1 ? 'AGENT' : 'AGENTS'}</span>
       </div>
       <div className={styles.lineRight} />
     </div>

@@ -6,7 +6,7 @@ import { SessionBanner } from './SessionBanner';
 import styles from './ChatTimeline.module.css';
 
 export function ChatTimeline({
-  messages,
+  messages = [],
   session,
   renderMessage, // function(msg, idx) => JSX for chat-type messages (MsgBubble)
   onApprove,

@@ -18,3 +18,9 @@
   color: var(--text-muted);
   animation: textPulse 2s ease-in-out infinite;
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .text {
+    animation: none;
+  }
+}

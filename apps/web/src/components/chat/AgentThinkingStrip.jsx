@@ -8,10 +8,10 @@ export function AgentThinkingStrip({ agents }) {
   return (
     <div className={styles.strip}>
       {agents.map((a) => {
-        const meta = agentMeta[a.key];
+        const meta = agentMeta[a.agent_type];
         if (!meta) return null;
         return (
-          <div key={a.key} className={styles.agent}>
+          <div key={a.agent_type} className={styles.agent}>
             <Dot color={meta.color} size={6} />
             <span className={styles.text}>
               <span style={{ color: meta.color, fontWeight: 500 }}>
