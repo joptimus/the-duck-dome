@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -32,6 +34,12 @@ class ClaudeExecutor(BaseExecutor):
 
 
 def _run_cli(cmd: list[str], cwd: str | None, timeout_s: int, name: str) -> RunResult:
+    # On Windows, .cmd shims (npm global installs) need shell=True.
+    # Native .exe files work without it.
+    use_shell = False
+    if sys.platform == "win32":
+        resolved = shutil.which(cmd[0])
+        use_shell = resolved is not None and resolved.lower().endswith(".cmd")
     start = time.time()
     try:
         result = subprocess.run(
@@ -42,6 +50,7 @@ def _run_cli(cmd: list[str], cwd: str | None, timeout_s: int, name: str) -> RunR
             errors="replace",
             timeout=timeout_s,
             cwd=cwd,
+            shell=use_shell,
         )
         duration_ms = int((time.time() - start) * 1000)
         return RunResult(

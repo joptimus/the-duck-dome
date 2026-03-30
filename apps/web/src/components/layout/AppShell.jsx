@@ -40,7 +40,7 @@ export function AppShell({ sidebar, children, panel }) {
         </div>
         <div
           className={`${styles.panelShell} ${panel ? styles.panelShellOpen : ''}`.trim()}
-          inert={!panel ? '' : undefined}
+          inert={!panel ? true : undefined}
           aria-hidden={!panel ? 'true' : undefined}
         >
           {displayPanel ? <div className={styles.panelContent}>{displayPanel}</div> : null}

@@ -24,7 +24,7 @@ export function AgentThinkingStrip({ agents = [], failure }) {
       })}
       {failure && (
         <span className={styles.error}>
-          Claude failed: {failure}
+          {(agentMeta[failure.agent]?.label || failure.agent)} failed: {failure.summary}
         </span>
       )}
     </div>

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 from duckdome.models.trigger import Trigger, TriggerStatus
@@ -12,6 +13,7 @@ class TriggerStore:
         self._data_dir = Path(data_dir)
         self._data_dir.mkdir(parents=True, exist_ok=True)
         self._file = self._data_dir / "triggers.jsonl"
+        self._lock = threading.Lock()
         self._triggers: dict[str, Trigger] = {}
         self._order: list[str] = []
         self._dedupe_index: dict[str, str] = {}  # dedupe_key -> trigger_id
@@ -41,27 +43,29 @@ class TriggerStore:
         tmp.replace(self._file)
 
     def add(self, trigger: Trigger) -> Trigger:
-        if trigger.dedupe_key in self._dedupe_index:
-            return self._triggers[self._dedupe_index[trigger.dedupe_key]]
-        self._triggers[trigger.id] = trigger
-        self._order.append(trigger.id)
-        self._dedupe_index[trigger.dedupe_key] = trigger.id
-        self._save()
-        return trigger
+        with self._lock:
+            if trigger.dedupe_key in self._dedupe_index:
+                return self._triggers[self._dedupe_index[trigger.dedupe_key]]
+            self._triggers[trigger.id] = trigger
+            self._order.append(trigger.id)
+            self._dedupe_index[trigger.dedupe_key] = trigger.id
+            self._save()
+            return trigger
 
     def get(self, trigger_id: str) -> Trigger | None:
         return self._triggers.get(trigger_id)
 
     def update(self, trigger_id: str, trigger: Trigger) -> Trigger | None:
-        if trigger_id not in self._triggers:
-            return None
-        if trigger.id != trigger_id:
-            raise ValueError(
-                f"trigger.id mismatch: expected {trigger_id}, got {trigger.id}"
-            )
-        self._triggers[trigger_id] = trigger
-        self._save()
-        return trigger
+        with self._lock:
+            if trigger_id not in self._triggers:
+                return None
+            if trigger.id != trigger_id:
+                raise ValueError(
+                    f"trigger.id mismatch: expected {trigger_id}, got {trigger.id}"
+                )
+            self._triggers[trigger_id] = trigger
+            self._save()
+            return trigger
 
     def list_by_channel(
         self, channel_id: str, status: str | None = None

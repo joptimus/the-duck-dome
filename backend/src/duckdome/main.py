@@ -16,8 +16,15 @@ Agent config snippet (for Claude Code ~/.claude.json):
 
 from __future__ import annotations
 
+import logging
 import threading
 from contextlib import asynccontextmanager
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s [%(name)s] %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 from fastapi import FastAPI
 

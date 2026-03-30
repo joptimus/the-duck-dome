@@ -414,20 +414,19 @@ export default function ChannelShell() {
     return map;
   }, [mergedAgents]);
   const hasRuntimeData = mergedAgents.length > 0 || triggers.length > 0;
-  const claudeRuntime = runtimeAgentMap.claude || null;
-  const isClaudeWorking = claudeRuntime?.status === "working";
-  const latestClaudeFailure = useMemo(() => {
-    const claudeTriggers = triggers
-      .filter((trigger) => trigger.target === "claude")
+  const latestAgentFailure = useMemo(() => {
+    const failedTriggers = triggers
+      .filter((trigger) => trigger.state === "failed" && trigger.last_error)
       .sort((a, b) => Number(b.completed_at || b.created_at || 0) - Number(a.completed_at || a.created_at || 0));
-    if (claudeTriggers.length === 0) return null;
-    const latest = claudeTriggers[0];
-    if (latest.state !== "failed" || !latest.last_error) return null;
+    if (failedTriggers.length === 0) return null;
+    const latest = failedTriggers[0];
+    const agent = latest.target || "agent";
     const text = String(latest.last_error || "")
       .replace(/traceback[\s\S]*/i, "")
       .split("\n")[0]
       .trim();
-    return text ? text.slice(0, 180) : "Runner error";
+    const summary = text ? text.slice(0, 180) : "Runner error";
+    return { agent, summary };
   }, [triggers]);
 
   // Derive channel agents list for TopBar (agent_type + running status)
@@ -700,7 +699,7 @@ export default function ChannelShell() {
 
         <AgentThinkingStrip
           agents={mergedAgents}
-          failure={latestClaudeFailure}
+          failure={latestAgentFailure}
         />
 
         <Composer
