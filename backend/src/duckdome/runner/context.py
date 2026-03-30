@@ -1,3 +1,5 @@
+# DEPRECATED: This module uses one-shot subprocess.run and will be removed.
+# See duckdome.wrapper for the persistent process replacement.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -109,27 +111,18 @@ def _repo_preflight(repo_path: str) -> RepoPreflightResult:
     return RepoPreflightResult(valid=True, path=repo_path)
 
 
-def build_prompt(ctx: RunContext) -> str:
-    """Build a short prompt envelope for Claude CLI."""
+def build_system_context(ctx: RunContext) -> str:
+    """Build system context for the agent (channel info, history, instructions)."""
     lines: list[str] = []
 
     if ctx.channel.channel_type == "repo" and ctx.channel.repo_path:
-        lines.append(
-            f"You are Claude, running as a DuckDome channel-scoped assistant "
-            f"in repo channel #{ctx.channel.channel_name}."
-        )
+        lines.append(f"You are responding in DuckDome repo channel #{ctx.channel.channel_name}.")
         lines.append(f"Working directory: {ctx.channel.repo_path}")
         if ctx.repo_preflight and not ctx.repo_preflight.valid:
             lines.append(f"Warning: repo preflight failed — {ctx.repo_preflight.error}")
-        lines.append(
-            "For repo channels, do not modify files unless the task clearly asks for it."
-        )
     else:
-        lines.append(
-            f"You are Claude, running as a DuckDome channel-scoped assistant "
-            f"in general channel #{ctx.channel.channel_name}."
-        )
-        lines.append("This is a discussion/planning channel with no repo binding.")
+        lines.append(f"You are responding in DuckDome general channel #{ctx.channel.channel_name}.")
+        lines.append("This channel has no repo binding.")
 
     lines.append("")
 
@@ -139,11 +132,22 @@ def build_prompt(ctx: RunContext) -> str:
             lines.append(f"  [{h['sender']}]: {h['text']}")
         lines.append("")
 
-    lines.append(f"[{ctx.trigger.sender}]: {ctx.trigger.text}")
-    lines.append("")
     lines.append(
-        "Make progress when possible. State assumptions if needed. "
-        "Ask one focused follow-up only when blocked."
+        "Respond directly to the user's message. Do not introduce yourself. "
+        "Do not ask what you can help with. Act on the request immediately. "
+        "If you need clarification, ask one specific question."
     )
 
     return "\n".join(lines)
+
+
+def build_user_message(ctx: RunContext) -> str:
+    """Extract the user's actual message text."""
+    return ctx.trigger.text
+
+
+# Backward-compatible: single combined prompt for agents that don't support
+# separate system/user messages (e.g. codex, gemini).
+def build_prompt(ctx: RunContext) -> str:
+    """Build a combined prompt envelope for CLI agents."""
+    return build_system_context(ctx) + "\n\n" + build_user_message(ctx)
