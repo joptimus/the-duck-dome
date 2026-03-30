@@ -15,29 +15,32 @@ def build_launch_args(
     mcp_config_path: Path,
     cwd: str | None,
     mcp_url: str = "",
+    auto_approve: bool = True,
 ) -> LaunchArgs:
     """Build provider-specific CLI command and env for persistent interactive mode."""
     match agent_type:
         case "claude":
-            # Claude uses --mcp-config with a JSON config file
-            return LaunchArgs(
-                cmd=[
-                    "claude",
-                    "--mcp-config", mcp_config_path.as_posix(),
-                ],
-            )
+            cmd = [
+                "claude",
+                "--mcp-config", mcp_config_path.as_posix(),
+            ]
+            if auto_approve:
+                cmd.append("--dangerously-skip-permissions")
+            return LaunchArgs(cmd=cmd)
         case "codex":
-            # Codex uses -c flags to set MCP server URL directly (no config file)
-            return LaunchArgs(
-                cmd=[
-                    "codex",
-                    "-c", f'mcp_servers.duckdome.url="{mcp_url}"',
-                ],
-            )
+            cmd = [
+                "codex",
+                "-c", f'mcp_servers.duckdome.url="{mcp_url}"',
+            ]
+            if auto_approve:
+                cmd.append("--dangerously-bypass-approvals-and-sandbox")
+            return LaunchArgs(cmd=cmd)
         case "gemini":
-            # Gemini uses GEMINI_CLI_SYSTEM_SETTINGS_PATH env var
+            cmd = ["gemini"]
+            if auto_approve:
+                cmd.append("--yolo")
             return LaunchArgs(
-                cmd=["gemini"],
+                cmd=cmd,
                 env={"GEMINI_CLI_SYSTEM_SETTINGS_PATH": mcp_config_path.as_posix()},
             )
         case _:

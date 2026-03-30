@@ -16,6 +16,18 @@ def test_claude_launch_args():
     assert "/tmp/mcp-config-claude.json" in result.cmd
     # Should NOT have --print (persistent mode)
     assert "--print" not in result.cmd
+    # Auto-approve enabled by default
+    assert "--dangerously-skip-permissions" in result.cmd
+
+
+def test_claude_launch_args_no_auto_approve():
+    result = build_launch_args(
+        agent_type="claude",
+        mcp_config_path=Path("/tmp/mcp-config-claude.json"),
+        cwd=None,
+        auto_approve=False,
+    )
+    assert "--dangerously-skip-permissions" not in result.cmd
 
 
 def test_codex_launch_args():
@@ -29,6 +41,8 @@ def test_codex_launch_args():
     # Codex uses -c flags, not --mcp-config
     assert "-c" in result.cmd
     assert any("duckdome" in arg for arg in result.cmd)
+    # Auto-approve enabled by default
+    assert "--dangerously-bypass-approvals-and-sandbox" in result.cmd
 
 
 def test_unknown_agent_raises():
