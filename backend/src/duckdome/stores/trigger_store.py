@@ -38,7 +38,7 @@ class TriggerStore:
                 f.write(self._triggers[tid].model_dump_json() + "\n")
             f.flush()
             os.fsync(f.fileno())
-        tmp.rename(self._file)
+        tmp.replace(self._file)
 
     def add(self, trigger: Trigger) -> Trigger:
         if trigger.dedupe_key in self._dedupe_index:
