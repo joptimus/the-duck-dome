@@ -225,8 +225,9 @@ export default function ChannelShell() {
   const fetchRepos = useCallback(async () => {
     try {
       const data = await getRepos();
+      const repoList = Array.isArray(data) ? data : data?.repos ?? [];
       setRepos(
-        (data.repos ?? []).map((r) => ({
+        repoList.map((r) => ({
           name: r.name,
           path: r.path,
           active: false,
@@ -436,7 +437,7 @@ export default function ChannelShell() {
         id: a.id,
         agent: a.agent_type,
         running: a.status === "working" || a.status === "idle",
-        prompt: a.current_task || "",
+        prompt: a.prompt || "",
       })),
     [mergedAgents],
   );
@@ -472,6 +473,10 @@ export default function ChannelShell() {
       } catch (error) {
         console.error("Failed to add agent:", error);
         setAgentError("Failed to add agent");
+        try {
+          const refreshed = await getChannelAgents(resolvedChannelId);
+          setAgents(normalizeAgents(refreshed, resolvedChannelId));
+        } catch { /* keep stale state if refresh also fails */ }
       }
     },
     [activeChannelId, channels],

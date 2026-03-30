@@ -10,7 +10,7 @@ export function ChannelList({ channels, activeChannel, onSelect, onDelete }) {
           channel={ch}
           active={activeChannel === (ch.id || ch.name)}
           onSelect={() => onSelect(ch.id || ch.name)}
-          onDelete={() => onDelete(ch.name)}
+          onDelete={() => onDelete(ch.id || ch.name)}
         />
       ))}
     </div>

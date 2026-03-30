@@ -30,9 +30,16 @@ class RepoService:
             if mode == "repo":
                 self._add_if_repo(path, source, hidden, seen, repos)
             else:
-                for child in sorted(path.iterdir()):
-                    if child.is_dir():
-                        self._add_if_repo(child, source, hidden, seen, repos)
+                try:
+                    children = sorted(path.iterdir())
+                except OSError:
+                    continue
+                for child in children:
+                    try:
+                        if child.is_dir():
+                            self._add_if_repo(child, source, hidden, seen, repos)
+                    except OSError:
+                        continue
 
         repos.sort(key=lambda r: r["name"].lower())
         return repos
@@ -52,7 +59,7 @@ class RepoService:
             return
         seen.add(resolved)
         repos.append({
-            "id": hashlib.sha1(resolved.encode()).hexdigest()[:12],
+            "id": hashlib.sha256(resolved.encode()).hexdigest()[:12],
             "name": path.name,
             "path": resolved,
             "source": f"{source.get('mode', 'root')}:{source['path']}",

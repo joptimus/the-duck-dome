@@ -22,4 +22,4 @@ class RepoEntry(BaseModel):
 
     def model_post_init(self, __context) -> None:
         if not self.id:
-            self.id = hashlib.sha1(self.path.encode()).hexdigest()[:12]
+            self.id = hashlib.sha256(self.path.encode()).hexdigest()[:12]

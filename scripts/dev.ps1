@@ -58,8 +58,14 @@ $backend = Start-Process -NoNewWindow -PassThru -FilePath python -ArgumentList "
 $web = Start-Process -NoNewWindow -PassThru -FilePath npm -ArgumentList "run", "dev" -WorkingDirectory "$RepoRoot\apps\web"
 
 Write-Host "==> Waiting for Vite..."
+$viteTimeout = 60
+$viteElapsed = 0
 do {
     Start-Sleep -Seconds 1
+    $viteElapsed++
+    if ($viteElapsed -ge $viteTimeout) {
+        throw "Vite did not start within $viteTimeout seconds."
+    }
     try { $null = Invoke-WebRequest -Uri "http://localhost:5173" -UseBasicParsing -TimeoutSec 1 -ErrorAction SilentlyContinue } catch {}
 } until ((Test-NetConnection -ComputerName localhost -Port 5173 -WarningAction SilentlyContinue).TcpTestSucceeded)
 
