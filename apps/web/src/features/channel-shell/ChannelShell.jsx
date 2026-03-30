@@ -22,7 +22,7 @@ import { AgentThinkingStrip } from "../../components/chat/AgentThinkingStrip";
 import { ActivityPanel, AgentsPanel, JobsPanel, RulesPanel, SettingsPanel } from "../../components/panels";
 import { SessionLauncher } from "../../components/modals/SessionLauncher";
 import { ScheduleModal } from "../../components/modals/ScheduleModal";
-import ChannelCreateModal from "./components/ChannelCreateModal";
+import CreateChannelModal from "../../components/modals/CreateChannelModal";
 
 function normalizeChannels(data) {
   if (!Array.isArray(data)) return [];
@@ -504,7 +504,7 @@ export default function ChannelShell() {
         />
       </AppShell>
 
-      <ChannelCreateModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={onCreate} />
+      <CreateChannelModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={onCreate} repos={repos} />
       <SessionLauncher open={sessionLauncherOpen} onClose={() => setSessionLauncherOpen(false)} />
       <ScheduleModal open={scheduleModalOpen} onClose={() => setScheduleModalOpen(false)} />
     </>

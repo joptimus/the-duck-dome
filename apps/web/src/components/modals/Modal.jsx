@@ -1,7 +1,16 @@
 import { useEffect } from 'react';
 import styles from './Modal.module.css';
 
-export function Modal({ open, onClose, title, children }) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  showTopBar = true,
+  showHeader = true,
+  cardClassName = '',
+  bodyClassName = '',
+}) {
   useEffect(() => {
     if (!open) return;
     const handleKey = (e) => {
@@ -15,13 +24,17 @@ export function Modal({ open, onClose, title, children }) {
 
   return (
     <div className={styles.overlay} onClick={onClose}>
-      <div className={styles.card} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.topBar} />
-        <div className={styles.header}>
-          <div className={styles.title}>{title}</div>
-          <button className={styles.closeBtn} onClick={onClose}>Ã—</button>
-        </div>
-        <div className={styles.body}>{children}</div>
+      <div className={[styles.card, cardClassName].filter(Boolean).join(' ')} onClick={(e) => e.stopPropagation()}>
+        {showTopBar && <div className={styles.topBar} />}
+        {showHeader && (
+          <div className={styles.header}>
+            <div className={styles.title}>{title}</div>
+            <button className={styles.closeBtn} onClick={onClose}>
+              ×
+            </button>
+          </div>
+        )}
+        <div className={[styles.body, bodyClassName].filter(Boolean).join(' ')}>{children}</div>
       </div>
     </div>
   );

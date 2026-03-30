@@ -203,6 +203,25 @@ export function FolderIcon({ size = 14, color = "currentColor" }) {
   );
 }
 
+export function HashIcon({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color, 2.5)}>
+      <line x1="8" y1="4" x2="6" y2="20" />
+      <line x1="16" y1="4" x2="14" y2="20" />
+      <line x1="4" y1="9" x2="20" y2="9" />
+      <line x1="3" y1="15" x2="19" y2="15" />
+    </svg>
+  );
+}
+
+export function MessageIcon({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color)}>
+      <path d="M21 12a8.99 8.99 0 0 1-9 9H5l-2 2v-7a9 9 0 1 1 18-4z" />
+    </svg>
+  );
+}
+
 export function CubeIcon({ size = 14, color = "currentColor" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color)}>
@@ -317,6 +336,18 @@ export function StopIcon({ size = 14, color = "currentColor" }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill={color} stroke="none">
       <rect x="6" y="6" width="12" height="12" rx="2" />
+    </svg>
+  );
+}
+
+export function GitIcon({ size = 14, color = "currentColor" }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" {...iconProps(color)}>
+      <circle cx="6" cy="6" r="3" />
+      <circle cx="18" cy="6" r="3" />
+      <circle cx="6" cy="18" r="3" />
+      <line x1="9" y1="6" x2="15" y2="6" />
+      <line x1="6" y1="9" x2="6" y2="15" />
     </svg>
   );
 }

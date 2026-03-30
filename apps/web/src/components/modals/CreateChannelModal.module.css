@@ -1,0 +1,460 @@
+.modalCard {
+  width: min(420px, calc(100vw - 32px));
+  max-width: 420px;
+  max-height: 80vh;
+  overflow: auto;
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  animation: modalIn 0.25s ease;
+}
+
+.modalBody {
+  padding: 0;
+}
+
+.modalRoot {
+  --accent: var(--blue);
+}
+
+.general {
+  --accent: var(--blue);
+}
+
+.repo {
+  --accent: var(--purple);
+}
+
+.topAccent {
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), rgba(168, 85, 247, 0.85));
+  border-radius: 14px 14px 0 0;
+}
+
+.header {
+  padding: 20px 24px 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.headerTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.title {
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text-bright);
+}
+
+.closeButton {
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
+}
+
+.closeButton:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.subtitle {
+  padding: 4px 24px 0;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+
+.content {
+  padding: 20px 24px 24px;
+}
+
+.field {
+  margin-bottom: 20px;
+  position: relative;
+}
+
+.label {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text-muted);
+  font-family: var(--font-label);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.typeTrigger,
+.typeOption,
+.repoTrigger,
+.repoOption {
+  width: 100%;
+  background: var(--bg-input);
+  border: 1px solid var(--border);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 9px 14px;
+  text-align: left;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.typeTrigger,
+.repoTrigger {
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+
+.typeTrigger.open,
+.repoTrigger.open {
+  border-color: color-mix(in srgb, var(--accent) 50%, transparent);
+  border-radius: 8px 8px 0 0;
+}
+
+.repoTrigger.open {
+  border-color: color-mix(in srgb, var(--purple) 50%, transparent);
+}
+
+.repoTrigger.hasValue {
+  border-color: color-mix(in srgb, var(--purple) 30%, transparent);
+}
+
+.optionMain,
+.repoTriggerMain,
+.repoOptionMain {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.optionLabel {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
+.optionDescription {
+  display: block;
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.chevron {
+  color: var(--text-muted);
+  display: inline-flex;
+  transition: transform 0.12s ease;
+}
+
+.chevronOpen {
+  transform: rotate(90deg);
+}
+
+.typeMenu,
+.repoMenu {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  z-index: 60;
+  background: var(--bg-input);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  border-top-color: var(--border);
+  border-radius: 0 0 8px 8px;
+  animation: fadeUp 0.1s ease;
+}
+
+.repoMenu {
+  border-color: color-mix(in srgb, var(--purple) 30%, transparent);
+  border-top-color: var(--border);
+}
+
+.typeOption,
+.repoOption {
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+}
+
+.typeOption:hover,
+.repoOption:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.typeOption {
+  --option-accent: var(--blue);
+}
+
+.typeGeneral {
+  --option-accent: var(--blue);
+}
+
+.typeRepo {
+  --option-accent: var(--purple);
+}
+
+.selected {
+  background: color-mix(in srgb, var(--option-accent) 10%, transparent);
+}
+
+.fadeUp {
+  animation: fadeUp 0.2s ease;
+}
+
+.repoSelectedText {
+  min-width: 0;
+}
+
+.repoPlaceholder {
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+
+.repoName,
+.repoOptionName {
+  display: block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 14px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repoPath,
+.repoOptionPath {
+  display: block;
+  font-family: "JetBrains Mono", monospace;
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.repoOptionName {
+  font-size: 13px;
+}
+
+.repoFilterRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.repoFilterInput {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.repoList {
+  max-height: 200px;
+  overflow: auto;
+}
+
+.repoOption {
+  padding: 8px 14px;
+}
+
+.repoSelected {
+  background: color-mix(in srgb, var(--purple) 10%, transparent);
+  border-left: 2px solid var(--purple);
+}
+
+.emptyState {
+  padding: 14px;
+  text-align: center;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.nameInputWrap {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-input);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.nameInputWrap:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.nameHasValue {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+.hashPrefix {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--accent);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.nameInput {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 15px;
+  padding: 10px 14px 10px 30px;
+}
+
+.nameInput::placeholder {
+  color: var(--text-muted);
+}
+
+.preview {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-family: "JetBrains Mono", monospace;
+  font-size: 12px;
+}
+
+.preview span {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.summaryBar {
+  margin-bottom: 20px;
+  border-radius: 8px;
+  padding: 10px 14px;
+  border: 1px solid color-mix(in srgb, var(--purple) 15%, transparent);
+  background: color-mix(in srgb, var(--purple) 6%, transparent);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.summaryBar p {
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+}
+
+.summaryBar span,
+.summaryBar code {
+  color: var(--purple);
+  font-weight: 500;
+}
+
+.summaryBar code {
+  font-family: "JetBrains Mono", monospace;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+}
+
+.cancelButton,
+.createButton {
+  border-radius: 8px;
+  padding: 10px;
+  font-family: var(--font-body);
+  font-size: 14px;
+}
+
+.cancelButton {
+  flex: 1;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cancelButton:hover {
+  border-color: var(--text-muted);
+}
+
+.createButton {
+  flex: 1.4;
+  border: none;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-family: var(--font-display);
+  font-size: 13px;
+  position: relative;
+  overflow: hidden;
+}
+
+.createButton:disabled {
+  cursor: default;
+}
+
+.createButtonEnabled {
+  color: #ffffff;
+  cursor: pointer;
+  background: linear-gradient(90deg, var(--blue), var(--purple));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--blue) 40%, transparent), 0 0 32px color-mix(in srgb, var(--purple) 20%, transparent);
+}
+
+.createButtonEnabled::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.12), transparent);
+  background-size: 200% 100%;
+  animation: shimmer 2s linear infinite;
+}
+
+.createButton span,
+.createButton :global(svg) {
+  position: relative;
+  z-index: 1;
+}
+
+@media (max-width: 640px) {
+  .modalCard {
+    width: calc(100vw - 24px);
+    max-width: none;
+  }
+
+  .header,
+  .subtitle,
+  .content {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}
