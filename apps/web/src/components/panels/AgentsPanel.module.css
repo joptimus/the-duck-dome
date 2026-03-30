@@ -364,8 +364,6 @@
   border-color: var(--text-secondary);
 }
 
-.typeBtnSelected {
-}
 
 .addActions {
   display: flex;

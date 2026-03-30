@@ -27,6 +27,7 @@ export function AgentsPanel({
   onAddAgent,
 }) {
   const [editingPrompt, setEditingPrompt] = useState(null);
+  const [draftPrompts, setDraftPrompts] = useState({});
   const [adding, setAdding] = useState(false);
   const [newAgent, setNewAgent] = useState({ type: "", repo: "", prompt: "" });
 
@@ -124,7 +125,7 @@ export function AgentsPanel({
                   <FolderIcon size={10} color="var(--text-muted)" />
                   Working directory
                 </div>
-                <select className={styles.repoSelect} defaultValue={agent.repo}>
+                <select className={styles.repoSelect} value={agent.repo} disabled onChange={() => {}}>
                   {repos.map((repo) => (
                     <option key={repo} value={repo}>
                       {repo}
@@ -152,13 +153,27 @@ export function AgentsPanel({
                 {isEditing ? (
                   <textarea
                     className={styles.promptTextarea}
-                    defaultValue={agent.prompt}
+                    value={draftPrompts[index] ?? agent.prompt}
                     rows={4}
                     style={{ borderColor: `${meta.color}40` }}
+                    onChange={(event) =>
+                      setDraftPrompts((prev) => ({ ...prev, [index]: event.target.value }))
+                    }
                   />
                 ) : (
-                  <div className={styles.promptCollapsed} onClick={() => setEditingPrompt(index)}>
-                    {agent.prompt}
+                  <div
+                    className={styles.promptCollapsed}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => setEditingPrompt(index)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        setEditingPrompt(index);
+                      }
+                    }}
+                  >
+                    {draftPrompts[index] ?? agent.prompt}
                     <div className={styles.promptFade} />
                   </div>
                 )}
@@ -201,7 +216,7 @@ export function AgentsPanel({
                   <button
                     key={type}
                     type="button"
-                    className={`${styles.typeBtn} ${selected ? styles.typeBtnSelected : ""}`.trim()}
+                    className={styles.typeBtn}
                     style={{
                       color: selected ? meta.color : undefined,
                       background: selected ? `${meta.color}15` : undefined,
