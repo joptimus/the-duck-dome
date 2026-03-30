@@ -221,10 +221,15 @@ class AgentProcessManager:
 
             for entry in entries:
                 channel = entry.get("channel", "general")
+                sender = entry.get("sender", "user")
                 text = entry.get("text", "")
-                # Build injection prompt: tell agent to read from MCP
+                # Build injection prompt: tell agent to use MCP tools
                 injection = (
-                    f"mcp read #{channel} - you were mentioned, take appropriate action"
+                    f"You were mentioned by {sender} in channel {channel}. "
+                    f"First call chat_join(channel=\"{channel}\", agent_type=\"{agent_type}\") if you haven't already, "
+                    f"then call chat_read(channel=\"{channel}\") to see the messages, "
+                    f"then call chat_send with your response. "
+                    f"The message was: {text}"
                 )
                 logger.info("[%s] injecting prompt for channel=%s", agent_type, channel)
                 try:
