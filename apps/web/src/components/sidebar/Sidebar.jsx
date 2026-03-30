@@ -20,6 +20,7 @@ export function Sidebar({
   onRemoveRepo,
   onRefreshRepos,
   onBrowseRepo,
+  onOpenRepoChannel,
 }) {
   const [pinnedOpen, setPinnedOpen] = useState(false);
 
@@ -80,6 +81,7 @@ export function Sidebar({
           onRemoveRepo={onRemoveRepo}
           onRefreshRepos={onRefreshRepos}
           onBrowseRepo={onBrowseRepo}
+          onOpenRepo={onOpenRepoChannel}
         />
       </div>
 

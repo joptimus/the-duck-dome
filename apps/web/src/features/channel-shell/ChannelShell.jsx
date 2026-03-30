@@ -40,6 +40,24 @@ function normalizeChannels(data) {
   }));
 }
 
+function normalizeFsPath(path) {
+  return String(path || "")
+    .trim()
+    .replace(/\\/g, "/")
+    .replace(/\/+$/g, "")
+    .toLowerCase();
+}
+
+function slugifyName(value) {
+  return String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, "-")
+    .replace(/[^a-z0-9-]/g, "")
+    .replace(/-+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
 function normalizeAgents(data, channelId) {
   if (!Array.isArray(data)) return [];
   return data.map((agent, index) => ({
@@ -517,6 +535,46 @@ export default function ChannelShell() {
     [activeChannelId, channels],
   );
 
+  const handleOpenRepoChannel = useCallback(
+    async (repo) => {
+      const repoPath = repo?.path;
+      if (!repoPath) return;
+
+      const normalizedRepoPath = normalizeFsPath(repoPath);
+      const existing = channels.find(
+        (channel) => channel.type === "repo" && normalizeFsPath(channel.repo_path) === normalizedRepoPath,
+      );
+      if (existing) {
+        setActiveChannelId(existing.id);
+        return;
+      }
+
+      const existingNames = new Set(channels.map((channel) => channel.name));
+      const baseName = slugifyName(repo.name || repoPath.split(/[\\/]/).pop() || "repo") || "repo";
+      let nextName = baseName;
+      let suffix = 2;
+      while (existingNames.has(nextName)) {
+        nextName = `${baseName}-${suffix}`;
+        suffix += 1;
+      }
+
+      try {
+        const created = await createChannel({
+          name: nextName,
+          type: "repo",
+          repo_path: repoPath,
+        });
+        const normalized = normalizeChannels([created])[0];
+        setChannels((prev) => [...prev, normalized]);
+        setActiveChannelId(normalized.id);
+      } catch (error) {
+        console.error("Failed to open repo channel:", error);
+        setChannelError("Failed to open repo channel");
+      }
+    },
+    [channels],
+  );
+
   const onSend = (text) => {
     if (!activeChannelId) {
       return Promise.reject(new Error("No active channel selected"));
@@ -542,6 +600,16 @@ export default function ChannelShell() {
   };
 
   const showChannel = activeChannel || channels.find((channel) => channel.id === activeChannelId) || null;
+  const reposWithActive = useMemo(
+    () =>
+      repos.map((repo) => ({
+        ...repo,
+        active:
+          showChannel?.type === "repo"
+          && normalizeFsPath(showChannel.repo_path) === normalizeFsPath(repo.path),
+      })),
+    [repos, showChannel],
+  );
 
   const togglePanel = (name) => {
     setActivePanel((prev) => (prev === name ? null : name));
@@ -587,7 +655,7 @@ export default function ChannelShell() {
         sidebar={
           <Sidebar
             channels={channels}
-            repos={repos}
+            repos={reposWithActive}
             activeChannel={activeChannelId}
             onSelectChannel={setActiveChannelId}
             onCreateChannel={() => setCreateOpen(true)}
@@ -596,6 +664,7 @@ export default function ChannelShell() {
             onRemoveRepo={handleRemoveRepo}
             onRefreshRepos={fetchRepos}
             onBrowseRepo={handleBrowseRepo}
+            onOpenRepoChannel={handleOpenRepoChannel}
           />
         }
         panel={renderPanel()}

@@ -10,9 +10,20 @@ function shortenPath(fullPath) {
   return fullPath;
 }
 
-function RepoRow({ name, path, active, onRemove }) {
+function RepoRow({ name, path, active, onOpen, onRemove }) {
   return (
-    <div className={styles.row}>
+    <div
+      className={styles.row}
+      onClick={onOpen}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onOpen();
+        }
+      }}
+    >
       <span className={styles.repoIcon}>
         <GitHubIcon size={14} color={active ? 'var(--purple)' : 'var(--text-muted)'} />
       </span>
@@ -33,7 +44,7 @@ function RepoRow({ name, path, active, onRemove }) {
   );
 }
 
-export function RepoList({ repos, onAddRepo, onRemoveRepo, onRefreshRepos, onBrowseRepo }) {
+export function RepoList({ repos, onAddRepo, onRemoveRepo, onRefreshRepos, onBrowseRepo, onOpenRepo }) {
   const [showForm, setShowForm] = useState(false);
 
   const handleBrowseHeader = async () => {
@@ -81,12 +92,13 @@ export function RepoList({ repos, onAddRepo, onRemoveRepo, onRefreshRepos, onBro
       )}
 
       <div className={styles.list}>
-        {repos.map((repo, idx) => (
+        {repos.map((repo) => (
           <RepoRow
             key={repo.path}
             name={repo.name}
             path={repo.path}
             active={repo.active || false}
+            onOpen={() => onOpenRepo?.(repo)}
             onRemove={() => onRemoveRepo(repo.path)}
           />
         ))}
