@@ -1,0 +1,17 @@
+.tag {
+  font-family: var(--font-label);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: var(--ls-lg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  line-height: 1;
+}
+
+.attacking {
+  animation: warningFlash 1s ease infinite;
+}
+
