@@ -3,17 +3,20 @@
 Ported from agentchattr/apps/server/src/wrapper_windows.py.
 Uses WriteConsoleInputW to inject text character-by-character
 followed by an Enter keystroke into a console process.
+
+IMPORTANT: FreeConsole/AttachConsole are process-global operations.
+This module must run in a SEPARATE process from the backend server,
+otherwise it detaches the backend from its console and crashes it.
+
+Usage as subprocess:
+    python -m duckdome.wrapper.injector_windows <pid> <text> [delay]
 """
 from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes
-import logging
 import sys
-import threading
 import time
-
-logger = logging.getLogger(__name__)
 
 if sys.platform != "win32":
     raise ImportError("injector_windows is only available on Windows")
@@ -59,34 +62,19 @@ def _make_key_event(char: str, key_down: bool) -> INPUT_RECORD:
     return rec
 
 
-# Process-level lock: FreeConsole/AttachConsole are process-global operations.
-# Only one thread may perform console injection at a time.
-_console_lock = threading.Lock()
-
-
 def inject(text: str, pid: int, delay: float = 0.01) -> bool:
     """Inject text + Enter into the console of the given PID.
 
     Returns True on success, False on failure.
-    Thread-safe: serialized via _console_lock since console attachment is process-global.
     """
-    with _console_lock:
-        return _inject_impl(text, pid, delay)
-
-
-def _inject_impl(text: str, pid: int, delay: float) -> bool:
-    # Free our own console first, then attach to the target process
     kernel32.FreeConsole()
     if not kernel32.AttachConsole(pid):
-        logger.error("AttachConsole(%d) failed", pid)
-        # Re-attach to our own console
         kernel32.AttachConsole(ATTACH_PARENT_PROCESS)
         return False
 
     try:
         handle = kernel32.GetStdHandle(-10)  # STD_INPUT_HANDLE
         if handle is None or handle == -1:
-            logger.error("GetStdHandle failed for pid %d", pid)
             return False
 
         written = ctypes.wintypes.DWORD(0)
@@ -109,3 +97,16 @@ def _inject_impl(text: str, pid: int, delay: float) -> bool:
     finally:
         kernel32.FreeConsole()
         kernel32.AttachConsole(ATTACH_PARENT_PROCESS)
+
+
+if __name__ == "__main__":
+    if len(sys.argv) < 3:
+        print(f"Usage: {sys.argv[0]} <pid> <text> [delay]", file=sys.stderr)
+        sys.exit(1)
+
+    target_pid = int(sys.argv[1])
+    target_text = sys.argv[2]
+    target_delay = float(sys.argv[3]) if len(sys.argv) > 3 else 0.01
+
+    ok = inject(target_text, target_pid, target_delay)
+    sys.exit(0 if ok else 1)
