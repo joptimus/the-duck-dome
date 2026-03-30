@@ -24,6 +24,92 @@ from duckdome.wrapper.queue import read_queue_entries
 
 logger = logging.getLogger(__name__)
 
+
+def _resolve_cmd_shim(cmd: list[str]) -> list[str]:
+    """Resolve a .cmd shim to the underlying node command on Windows.
+
+    npm global installs create .cmd shims like::
+
+        @IF EXIST "%~dp0\\node.exe" (
+          "%~dp0\\node.exe" "%~dp0\\node_modules\\...\\cli.js" %*
+        ) ELSE (
+          node "%~dp0\\node_modules\\...\\cli.js" %*
+        )
+
+    Running these via shell=True + CREATE_NEW_CONSOLE doesn't work for
+    interactive TUI apps because cmd.exe /c interferes with console I/O.
+    This function parses the shim to extract the real command.
+    """
+    exe = shutil.which(cmd[0])
+    if exe is None or not exe.lower().endswith(".cmd"):
+        return cmd
+
+    try:
+        shim_text = Path(exe).read_text(encoding="utf-8")
+    except OSError:
+        logger.warning("Could not read .cmd shim: %s", exe)
+        return cmd
+
+    shim_dir = str(Path(exe).parent)
+
+    # npm .cmd shims come in two common formats. Both end with a line like:
+    #   "node.exe" "...cli.js" %*
+    # but use either %~dp0 or %dp0% for the directory prefix.
+    # We look for the line containing both a .js script and %*, then resolve
+    # the directory variable to the actual shim directory.
+    for line in shim_text.splitlines():
+        stripped = line.strip()
+        if "%*" not in stripped:
+            continue
+        if ".js" not in stripped.lower():
+            continue
+
+        # Extract just the command portion (after any || or & chains)
+        for sep in ("||", "&"):
+            if sep in stripped:
+                stripped = stripped.split(sep)[-1].strip()
+
+        # Replace directory variables with actual shim directory
+        for var in ("%~dp0\\", "%~dp0/", "%dp0%\\", "%dp0%/"):
+            stripped = stripped.replace(var, shim_dir + "\\")
+
+        # Remove %* and trailing whitespace
+        stripped = stripped.replace("%*", "").strip()
+
+        # Replace %_prog% with node.exe from shim directory (or just "node")
+        node_exe = os.path.join(shim_dir, "node.exe")
+        if os.path.isfile(node_exe):
+            stripped = stripped.replace("%_prog%", node_exe)
+        else:
+            stripped = stripped.replace("%_prog%", "node")
+
+        # Split into parts, respecting quotes
+        parts = []
+        in_quote = False
+        current = ""
+        for ch in stripped:
+            if ch == '"':
+                in_quote = not in_quote
+            elif ch == " " and not in_quote:
+                if current:
+                    parts.append(current)
+                    current = ""
+            else:
+                current += ch
+        if current:
+            parts.append(current)
+
+        if not parts:
+            continue
+
+        # Append original extra args (everything after cmd[0])
+        result = parts + cmd[1:]
+        logger.info("Resolved .cmd shim %s -> %s", cmd[0], result)
+        return result
+
+    logger.warning("Could not parse .cmd shim: %s", exe)
+    return cmd
+
 QUEUE_POLL_INTERVAL = 2.0  # seconds
 INJECT_DELAY = 0.01  # seconds between keystrokes
 
@@ -85,11 +171,13 @@ class AgentProcessManager:
             agent_type, mcp_config_path, cwd, mcp_url=self._mcp_url
         )
 
-        # Resolve .cmd shims on Windows
-        use_shell = False
+        # Resolve .cmd shims to the underlying node command on Windows.
+        # Running the .cmd via shell=True + CREATE_NEW_CONSOLE doesn't work
+        # for interactive TUI apps (cmd.exe /c interferes with console I/O).
+        # Instead, resolve to the actual executable so we can launch directly.
+        final_cmd = list(launch.cmd)
         if sys.platform == "win32":
-            resolved = shutil.which(launch.cmd[0])
-            use_shell = resolved is not None and resolved.lower().endswith(".cmd")
+            final_cmd = _resolve_cmd_shim(final_cmd)
 
         env = {**os.environ, **launch.env}
 
@@ -102,13 +190,12 @@ class AgentProcessManager:
 
         def _run_loop():
             while not agent_proc.stop_event.is_set():
-                logger.info("[%s] starting process: %s", agent_type, " ".join(launch.cmd))
+                logger.info("[%s] starting process: %s", agent_type, " ".join(final_cmd))
                 try:
                     proc = subprocess.Popen(
-                        launch.cmd,
+                        final_cmd,
                         cwd=cwd,
                         env=env,
-                        shell=use_shell,
                         creationflags=creation_flags,
                     )
                     agent_proc.proc = proc
