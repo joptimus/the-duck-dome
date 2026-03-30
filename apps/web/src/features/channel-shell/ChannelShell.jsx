@@ -10,14 +10,16 @@ import {
 } from "./api";
 import { createWsClient } from "../../api/ws";
 import { mockMessagesByChannelId } from "./mockData";
-import AgentRuntimeStrip from "./components/AgentRuntimeStrip";
+import { AppShell } from "../../components/layout/AppShell";
+import { Sidebar } from "../../components/sidebar/Sidebar";
+import { TopBar } from "../../components/topbar/TopBar";
+import { ChatTimeline } from "../../components/chat/ChatTimeline";
+import { Composer } from "../../components/chat/Composer";
+import { AgentThinkingStrip } from "../../components/chat/AgentThinkingStrip";
+import { ActivityPanel, AgentsPanel, JobsPanel, RulesPanel, SettingsPanel } from "../../components/panels";
+import { SessionLauncher } from "../../components/modals/SessionLauncher";
+import { ScheduleModal } from "../../components/modals/ScheduleModal";
 import ChannelCreateModal from "./components/ChannelCreateModal";
-import ChannelHeader from "./components/ChannelHeader";
-import ChatShell from "./components/ChatShell";
-import RuntimeDetailsPanel from "./components/RuntimeDetailsPanel";
-import SidebarChannelList from "./components/SidebarChannelList";
-import TriggerSummary from "./components/TriggerSummary";
-import "./channelShell.css";
 
 function normalizeChannels(data) {
   if (!Array.isArray(data)) return [];
@@ -94,6 +96,7 @@ function normalizeMessages(data, channelId) {
       sender_type: isAssistant ? "assistant" : senderLower === "system" ? "system" : "user",
       text: message.text || "",
       time: formatClockTime(message.timestamp ?? message.time),
+      timestamp: message.timestamp ?? message.time,
     };
   });
 }
@@ -156,6 +159,11 @@ export default function ChannelShell() {
   const [createOpen, setCreateOpen] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const activeChannelIdRef = useRef(null);
+
+  // New UI state
+  const [activePanel, setActivePanel] = useState(null);
+  const [sessionLauncherOpen, setSessionLauncherOpen] = useState(false);
+  const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 
   useEffect(() => {
     let ignore = false;
@@ -328,6 +336,28 @@ export default function ChannelShell() {
     return text ? text.slice(0, 180) : "Runner error";
   }, [triggers]);
 
+  // Derive channel agents list for TopBar (agent_type + running status)
+  const channelAgents = useMemo(
+    () =>
+      mergedAgents.map((a) => ({
+        agent: a.agent_type,
+        running: a.status === "working" || a.status === "idle",
+      })),
+    [mergedAgents],
+  );
+
+  // Derive repo list from channels for Sidebar
+  const repos = useMemo(
+    () => channels.filter((ch) => ch.type === "repo").map((ch) => ch.repo_path).filter(Boolean),
+    [channels],
+  );
+
+  // Pending approval count for TopBar pill
+  const pendingCount = useMemo(
+    () => activeMessages.filter((m) => m.sender_type === "tool_approval" && m.status === "pending").length,
+    [activeMessages],
+  );
+
   const onCreate = async (payload) => {
     const created = await createChannel(payload);
     const normalized = normalizeChannels([created])[0];
@@ -351,35 +381,94 @@ export default function ChannelShell() {
 
   const showChannel = activeChannel || channels.find((channel) => channel.id === activeChannelId) || null;
 
-  return (
-    <div className="channel-shell-layout">
-      <SidebarChannelList
-        channels={channels}
-        activeChannelId={activeChannelId}
-        onSelect={setActiveChannelId}
-        onOpenCreate={() => setCreateOpen(true)}
-      />
+  const togglePanel = (name) => {
+    setActivePanel((prev) => (prev === name ? null : name));
+  };
 
-      <main className="channel-shell-main">
-        <div className={`ws-status ${wsConnected ? "ws-status--connected" : "ws-status--reconnecting"}`}>
-          <span className="ws-status__dot" />
-          {wsConnected ? "Connected" : "Reconnecting\u2026"}
-        </div>
-        <ChannelHeader channel={showChannel} runtimeStrip={<AgentRuntimeStrip agentMap={runtimeAgentMap} />} />
-        {channelError ? <div className="channel-header-error">{channelError}</div> : null}
-        <TriggerSummary summary={triggerSummary} hasData={hasRuntimeData} error={triggerError} />
-        <RuntimeDetailsPanel channelId={activeChannelId} agents={mergedAgents} error={agentError} />
-        <ChatShell
-          channel={showChannel}
-          messages={activeMessages}
-          onSend={onSend}
-          messageError={messagesError}
-          claudeWorking={isClaudeWorking}
-          claudeFailure={latestClaudeFailure}
+  const renderPanel = () => {
+    switch (activePanel) {
+      case "activity":
+        return (
+          <ActivityPanel
+            open
+            onClose={() => setActivePanel(null)}
+            agentActivity={{}}
+          />
+        );
+      case "agents":
+        return (
+          <AgentsPanel
+            open
+            onClose={() => setActivePanel(null)}
+            channelName={showChannel?.name}
+            agents={channelAgents}
+            repos={repos}
+          />
+        );
+      case "jobs":
+        return <JobsPanel open onClose={() => setActivePanel(null)} />;
+      case "rules":
+        return <RulesPanel open onClose={() => setActivePanel(null)} />;
+      case "settings":
+        return <SettingsPanel open onClose={() => setActivePanel(null)} />;
+      default:
+        return null;
+    }
+  };
+
+  return (
+    <>
+      <AppShell
+        sidebar={
+          <Sidebar
+            channels={channels}
+            repos={repos}
+            activeChannel={activeChannelId}
+            onSelectChannel={setActiveChannelId}
+            onCreateChannel={() => setCreateOpen(true)}
+            onSessionLaunch={() => setSessionLauncherOpen(true)}
+          />
+        }
+        panel={renderPanel()}
+      >
+        <TopBar
+          channelName={showChannel?.name || ""}
+          channelAgents={channelAgents}
+          pendingCount={pendingCount}
+          activePanel={activePanel}
+          onTogglePanel={togglePanel}
         />
-      </main>
+
+        {channelError && (
+          <div style={{ padding: "4px 16px", color: "var(--warning)", fontSize: "var(--fs-label, 11px)" }}>
+            {channelError}
+          </div>
+        )}
+        {messagesError && (
+          <div style={{ padding: "4px 16px", color: "var(--warning)", fontSize: "var(--fs-label, 11px)" }}>
+            Message sync issue: {messagesError}
+          </div>
+        )}
+
+        <ChatTimeline
+          messages={activeMessages}
+          channelName={showChannel?.name}
+        />
+
+        <AgentThinkingStrip
+          agents={mergedAgents}
+          failure={latestClaudeFailure}
+        />
+
+        <Composer
+          onSend={onSend}
+          channelName={showChannel?.name}
+        />
+      </AppShell>
 
       <ChannelCreateModal open={createOpen} onClose={() => setCreateOpen(false)} onCreate={onCreate} />
-    </div>
+      <SessionLauncher open={sessionLauncherOpen} onClose={() => setSessionLauncherOpen(false)} />
+      <ScheduleModal open={scheduleModalOpen} onClose={() => setScheduleModalOpen(false)} />
+    </>
   );
 }

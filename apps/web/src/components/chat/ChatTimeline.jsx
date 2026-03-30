@@ -1,58 +1,48 @@
-import { useRef, useEffect } from 'react';
-import { DateDivider } from './DateDivider';
+import { useEffect, useRef } from 'react';
+import { MessageBubble } from './MessageBubble';
 import { SystemMessage } from './SystemMessage';
 import { ToolApprovalCard } from './ToolApprovalCard';
-import { SessionBanner } from './SessionBanner';
+import { DateDivider } from './DateDivider';
 import styles from './ChatTimeline.module.css';
 
-export function ChatTimeline({
-  messages = [],
-  session,
-  renderMessage, // function(msg, idx) => JSX for chat-type messages (MsgBubble)
-  onApprove,
-  onDeny,
-}) {
-  const scrollRef = useRef(null);
+export function ChatTimeline({ messages = [], channelName, onApprove, onDeny }) {
+  const bottomRef = useRef(null);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [messages]);
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length]);
+
+  if (messages.length === 0) {
+    return (
+      <div className={styles.timeline}>
+        <div className={styles.empty}>No messages yet in #{channelName || 'channel'}.</div>
+      </div>
+    );
+  }
 
   return (
-    <div ref={scrollRef} className={styles.timeline}>
-      {/* Session banner */}
-      {session && (
-        <SessionBanner
-          sessionId={session.id}
-          agentCount={session.agentCount}
-        />
-      )}
-
-      {/* Message dispatch */}
-      {messages.map((msg, i) => {
-        if (msg.type === 'date_divider') {
-          return <DateDivider key={i} label={msg.label} />;
+    <div className={styles.timeline}>
+      {messages.map((msg, idx) => {
+        if (msg.sender_type === 'date_divider') {
+          return <DateDivider key={msg.id} label={msg.text} />;
         }
-        if (msg.type === 'system') {
-          return <SystemMessage key={i} msg={msg} idx={i} />;
+        if (msg.sender_type === 'system') {
+          return <SystemMessage key={msg.id} msg={msg} idx={idx} />;
         }
-        if (msg.type === 'tool_approval') {
+        if (msg.sender_type === 'tool_approval') {
           return (
             <ToolApprovalCard
-              key={msg.id || i}
+              key={msg.id}
               msg={msg}
-              idx={i}
-              onApprove={() => onApprove?.(msg)}
-              onDeny={() => onDeny?.(msg)}
+              idx={idx}
+              onApprove={() => onApprove?.(msg.id)}
+              onDeny={() => onDeny?.(msg.id)}
             />
           );
         }
-        // Default: chat message (MsgBubble from UI-8a)
-        return renderMessage(msg, i);
+        return <MessageBubble key={msg.id} message={msg} index={idx} />;
       })}
+      <div ref={bottomRef} />
     </div>
   );
 }

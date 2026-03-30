@@ -3,7 +3,6 @@ import { agentMeta, allAgentTypes } from "../../constants/agents";
 import { ElectricPulse } from "../effects/ElectricPulse";
 import {
   AgentLogo,
-  Dot,
   EditIcon,
   FolderIcon,
   PlayIcon,
@@ -14,6 +13,7 @@ import {
   TrashIcon,
   UsersIcon,
 } from "../icons";
+import { Dot } from "../primitives/Dot";
 import styles from "./AgentsPanel.module.css";
 
 export function AgentsPanel({
