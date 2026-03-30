@@ -93,6 +93,11 @@ class AgentProcessManager:
 
         env = {**os.environ, **launch.env}
 
+        # On Windows, each agent needs its own console window for keystroke injection
+        creation_flags = 0
+        if sys.platform == "win32":
+            creation_flags = subprocess.CREATE_NEW_CONSOLE
+
         agent_proc = AgentProcess(agent_type=agent_type)
 
         def _run_loop():
@@ -104,6 +109,7 @@ class AgentProcessManager:
                         cwd=cwd,
                         env=env,
                         shell=use_shell,
+                        creationflags=creation_flags,
                     )
                     agent_proc.proc = proc
                     agent_proc.pid = proc.pid
