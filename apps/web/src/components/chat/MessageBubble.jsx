@@ -13,6 +13,19 @@ const AGENT_META = {
   minimax: { color: 'var(--agent-minimax)', bg: 'var(--agent-minimax-bg)', border: 'var(--agent-minimax-border)' },
 };
 
+function normalizeDisplayText(value) {
+  if (typeof value !== 'string' || value.length === 0) return value;
+  return value
+    .replaceAll('â€”', '—')
+    .replaceAll('â€“', '–')
+    .replaceAll('â€˜', '‘')
+    .replaceAll('â€™', '’')
+    .replaceAll('â€œ', '“')
+    .replaceAll('â€', '”')
+    .replaceAll('â€¦', '…')
+    .replaceAll('Â ', ' ');
+}
+
 function renderTextWithMentions(text) {
   const parts = text.split(/(@\w+)/g);
   return parts.map((part, i) => {
@@ -43,6 +56,7 @@ function formatTime(ts) {
 export function MessageBubble({ message, index = 0 }) {
   const [hovered, setHovered] = useState(false);
   const { sender, text, timestamp } = message;
+  const normalizedText = normalizeDisplayText(text || '');
   const isUser = !AGENT_META[sender?.toLowerCase()];
   const agent = AGENT_META[sender?.toLowerCase()];
 
@@ -80,7 +94,7 @@ export function MessageBubble({ message, index = 0 }) {
           <span className={styles.timestamp}>{formatTime(timestamp)}</span>
         </div>
         <div className={styles.body}>
-          {renderTextWithMentions(text)}
+          {renderTextWithMentions(normalizedText)}
         </div>
 
         {hovered && <MessageToolbar messageId={message.id} />}
