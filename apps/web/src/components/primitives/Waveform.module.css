@@ -1,0 +1,15 @@
+.container {
+  display: flex;
+  align-items: flex-end;
+  gap: 1.5px;
+  height: 18px;
+}
+
+.bar {
+  width: 2px;
+  height: 14px;
+  border-radius: 1px;
+  transform-origin: bottom;
+  opacity: 0.7;
+}
+
