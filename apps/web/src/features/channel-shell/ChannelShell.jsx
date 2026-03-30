@@ -461,8 +461,8 @@ export default function ChannelShell() {
         />
 
         <Composer
-          onSend={onSend}
-          channelName={showChannel?.name}
+          onSendMessage={onSend}
+          onSchedule={() => setScheduleModalOpen(true)}
         />
       </AppShell>
 
