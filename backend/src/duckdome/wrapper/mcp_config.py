@@ -16,6 +16,12 @@ def generate_mcp_config(
             "duckdome": {
                 "type": "http",
                 "url": mcp_url,
+                "autoApprove": [
+                    "chat_join",
+                    "chat_read",
+                    "chat_send",
+                    "chat_rules",
+                ],
             }
         }
     }
