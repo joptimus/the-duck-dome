@@ -1,0 +1,268 @@
+.wrapper {
+  display: flex;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.avatarCol {
+  margin-right: 12px;
+  margin-top: 2px;
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1.5px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.card {
+  flex: 1;
+  max-width: 80%;
+  border: 1px solid;
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
+}
+
+.accentBar {
+  height: 2px;
+  width: 100%;
+}
+
+/* ── Header ── */
+.header {
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.agentName {
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-xs);
+}
+
+.statusBadge {
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: var(--ls-lg);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid;
+}
+
+.time {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+/* ── Command Block ── */
+.commandSection {
+  padding: 0 14px;
+  margin-bottom: 10px;
+}
+
+.toolRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.toolName {
+  font-family: var(--font-label);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: var(--ls-sm);
+}
+
+.diff {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--success);
+}
+
+.commandBlock {
+  background: var(--bg-app);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--text-primary);
+  word-break: break-all;
+  line-height: 1.6;
+}
+
+.commandPrefix {
+  color: var(--text-muted);
+  user-select: none;
+}
+
+/* ── Reason ── */
+.reason {
+  padding: 0 14px;
+  margin-bottom: 12px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* ── Actions ── */
+.actions {
+  padding: 12px 14px;
+  border-top: 1px solid rgba(245, 158, 11, 0.09);
+  margin-top: 10px;
+}
+
+.mainButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.approveBtn {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 7px;
+  background: rgba(0, 255, 163, 0.09);
+  border: 1px solid rgba(0, 255, 163, 0.22);
+  color: var(--success);
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--ls-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.approveBtn:hover {
+  background: rgba(0, 255, 163, 0.16);
+  border-color: rgba(0, 255, 163, 0.38);
+  box-shadow: 0 0 16px rgba(0, 255, 163, 0.19);
+}
+
+.denyBtn {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: 7px;
+  background: rgba(255, 77, 109, 0.06);
+  border: 1px solid rgba(255, 77, 109, 0.16);
+  color: var(--error);
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: var(--fs-xs);
+  letter-spacing: var(--ls-sm);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s;
+}
+
+.denyBtn:hover {
+  background: rgba(255, 77, 109, 0.13);
+  border-color: rgba(255, 77, 109, 0.31);
+}
+
+/* ── Secondary Buttons ── */
+.secondaryButtons {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.ghostBtn {
+  padding: 4px 10px;
+  border-radius: 5px;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.12s;
+}
+
+.ghostBtn:hover {
+  border-color: var(--blue);
+  color: var(--blue);
+}
+
+.ghostBtnActive {
+  background: rgba(0, 212, 255, 0.06);
+  border-color: rgba(0, 212, 255, 0.25);
+  color: var(--blue);
+}
+
+/* ── Policy Dropdown ── */
+.policyDropdown {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.policyHeader {
+  font-family: var(--font-label);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: var(--ls-lg);
+  color: var(--blue);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.policyRow {
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-bottom: 4px;
+  transition: background 0.12s;
+}
+
+.policyRow:last-child {
+  margin-bottom: 0;
+}
+
+.policyRow:hover {
+  background: rgba(0, 212, 255, 0.06);
+}
+
+.policyLabel {
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+
+.policyDesc {
+  font-family: var(--font-body);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
