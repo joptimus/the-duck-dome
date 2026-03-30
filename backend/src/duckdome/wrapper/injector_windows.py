@@ -87,9 +87,12 @@ def inject(text: str, pid: int, delay: float = 0.01) -> bool:
             if delay > 0:
                 time.sleep(delay)
 
-        # Press Enter
+        # Press Enter — must include VK_RETURN (0x0D) so TUI apps
+        # that check wVirtualKeyCode (not just UnicodeChar) recognize it.
         enter_down = _make_key_event("\r", True)
+        enter_down.Event.KeyEvent.wVirtualKeyCode = 0x0D
         enter_up = _make_key_event("\r", False)
+        enter_up.Event.KeyEvent.wVirtualKeyCode = 0x0D
         records = (INPUT_RECORD * 2)(enter_down, enter_up)
         kernel32.WriteConsoleInputW(handle, records, 2, ctypes.byref(written))
 

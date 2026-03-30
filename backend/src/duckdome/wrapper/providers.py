@@ -22,7 +22,7 @@ def build_launch_args(
         case "claude":
             cmd = [
                 "claude",
-                "--mcp-config", mcp_config_path.as_posix(),
+                "--mcp-config", str(mcp_config_path),
             ]
             if auto_approve:
                 cmd.append("--dangerously-skip-permissions")
@@ -41,7 +41,7 @@ def build_launch_args(
                 cmd.append("--yolo")
             return LaunchArgs(
                 cmd=cmd,
-                env={"GEMINI_CLI_SYSTEM_SETTINGS_PATH": mcp_config_path.as_posix()},
+                env={"GEMINI_CLI_SYSTEM_SETTINGS_PATH": str(mcp_config_path)},
             )
         case _:
             raise ValueError(f"Unknown agent type: {agent_type}")

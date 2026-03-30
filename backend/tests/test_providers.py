@@ -13,7 +13,7 @@ def test_claude_launch_args():
     )
     assert result.cmd[0] == "claude"
     assert "--mcp-config" in result.cmd
-    assert "/tmp/mcp-config-claude.json" in result.cmd
+    assert any("mcp-config-claude.json" in arg for arg in result.cmd)
     # Should NOT have --print (persistent mode)
     assert "--print" not in result.cmd
     # Auto-approve enabled by default
