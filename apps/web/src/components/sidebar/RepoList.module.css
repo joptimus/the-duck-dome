@@ -30,7 +30,6 @@
 }
 
 .list {
-  max-height: 300px;
   overflow: auto;
 }
 
@@ -41,6 +40,16 @@
   gap: 7px;
   cursor: pointer;
   transition: background 0.1s;
+}
+
+.repoIcon {
+  width: 14px;
+  height: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 3px;
+  flex-shrink: 0;
 }
 
 .row:hover {

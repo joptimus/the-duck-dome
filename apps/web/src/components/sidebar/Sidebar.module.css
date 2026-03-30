@@ -5,7 +5,8 @@
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   position: relative;
   z-index: 2;
   backdrop-filter: blur(12px);

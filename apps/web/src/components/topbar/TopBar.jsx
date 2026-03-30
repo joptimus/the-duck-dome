@@ -1,6 +1,6 @@
 import { agentMeta } from "../../constants/agents";
 import { ElectricPulse } from "../effects/ElectricPulse";
-import { AgentLogo, BoltIcon, GearIcon, HelpIcon, JobsIcon, PinIcon, RulesIcon, UsersIcon } from "../icons";
+import { AgentLogo, BoltIcon, GearIcon, HelpIcon, JobsIcon, RulesIcon, UsersIcon } from "../icons";
 import { PendingApprovalPill } from "../chat/PendingApprovalPill";
 import { ToolbarBtn, Waveform } from "../primitives";
 import styles from "./TopBar.module.css";
@@ -11,7 +11,6 @@ export function TopBar({
   pendingCount = 0,
   activePanel,
   onTogglePanel,
-  onTogglePinned,
 }) {
   return (
     <div className={styles.bar}>
@@ -93,9 +92,6 @@ export function TopBar({
           onClick={() => onTogglePanel?.("rules")}
         >
           <RulesIcon size={14} color="currentColor" />
-        </ToolbarBtn>
-        <ToolbarBtn title="Pinned" onClick={onTogglePinned}>
-          <PinIcon size={14} color="currentColor" />
         </ToolbarBtn>
         <ToolbarBtn
           title="Settings"

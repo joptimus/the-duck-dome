@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { SectionLabel } from '../primitives/SectionLabel';
-import { FolderIcon, PlusIcon, XIcon, RefreshIcon, CubeIcon } from '../icons/Icons';
+import { FolderIcon, PlusIcon, XIcon, RefreshIcon, GitHubIcon } from '../icons/Icons';
 import AddRepoForm from './AddRepoForm';
 import styles from './RepoList.module.css';
 
@@ -19,7 +19,9 @@ function RepoRow({ name, path, active, onRemove }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
     >
-      <CubeIcon size={13} color={active ? 'var(--purple)' : 'var(--text-muted)'} />
+      <span className={styles.repoIcon}>
+        <GitHubIcon size={14} color={active ? 'var(--purple)' : 'var(--text-muted)'} />
+      </span>
       <div className={styles.rowContent}>
         <span className={`${styles.repoName} ${active ? styles.repoNameActive : ''}`}>
           {name}

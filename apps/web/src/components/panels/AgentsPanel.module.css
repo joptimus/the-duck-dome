@@ -3,22 +3,22 @@
   background: var(--bg-surface);
   border-left: 1px solid var(--border);
   height: 100%;
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
   display: flex;
   flex-direction: column;
-  position: relative;
   flex-shrink: 0;
   animation: slideIn 0.25s ease;
 }
 
 .accentBar {
-  position: absolute;
+  position: sticky;
   top: 0;
-  left: 0;
-  right: 0;
   height: 2px;
   background: var(--gradient);
   opacity: 0.6;
+  z-index: 3;
+  flex-shrink: 0;
 }
 
 .header {
@@ -82,8 +82,9 @@
 
 .agentList {
   flex: 1;
-  overflow: auto;
-  padding: 8px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 0 0;
 }
 
 .agentCard {

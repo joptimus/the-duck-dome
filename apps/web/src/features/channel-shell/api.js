@@ -71,6 +71,25 @@ export async function getChannelAgents(channelId) {
   }
 }
 
+export async function addChannelAgent(channelId, agentType) {
+  try {
+    return await request(`/api/channels/${encodeURIComponent(channelId)}/agents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ agent_type: agentType }),
+    });
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
+    return {
+      id: `${channelId}:${agentType}`,
+      channel_id: channelId,
+      agent_type: agentType,
+      status: "idle",
+      last_heartbeat: null,
+    };
+  }
+}
+
 export async function getChannelTriggers(channelId) {
   try {
     return await request(`/api/channels/${encodeURIComponent(channelId)}/triggers`);

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  addChannelAgent,
   createChannel,
   getChannel,
   getChannelAgents,
@@ -400,6 +401,24 @@ export default function ChannelShell() {
     setCreateOpen(false);
   };
 
+  const handleAddAgent = useCallback(
+    async ({ type }) => {
+      if (!activeChannelId || !type) {
+        return;
+      }
+      try {
+        await addChannelAgent(activeChannelId, type);
+        const refreshed = await getChannelAgents(activeChannelId);
+        setAgents(normalizeAgents(refreshed, activeChannelId));
+        setAgentError(null);
+      } catch (error) {
+        console.error("Failed to add agent:", error);
+        setAgentError("Failed to add agent");
+      }
+    },
+    [activeChannelId],
+  );
+
   const onSend = (text) => {
     if (!activeChannelId) {
       return Promise.reject(new Error("No active channel selected"));
@@ -437,6 +456,7 @@ export default function ChannelShell() {
             channelName={showChannel?.name}
             agents={channelAgents}
             repos={repos}
+            onAddAgent={handleAddAgent}
           />
         );
       case "jobs":

@@ -1,9 +1,28 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ParticleField } from '../effects/ParticleField';
 import { AmbientOrbs } from '../effects/AmbientOrbs';
 import styles from './AppShell.module.css';
 
 export function AppShell({ sidebar, children, panel }) {
+  const [displayPanel, setDisplayPanel] = useState(panel);
+
+  useEffect(() => {
+    if (panel) {
+      setDisplayPanel(panel);
+      return undefined;
+    }
+
+    if (!displayPanel) {
+      return undefined;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDisplayPanel(null);
+    }, 360);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [panel, displayPanel]);
+
   return (
     <div className={styles.root}>
       <div className={styles.background}>
@@ -19,11 +38,9 @@ export function AppShell({ sidebar, children, panel }) {
         <div className={styles.content}>
           {children}
         </div>
-        {panel && (
-          <div className={styles.panel}>
-            {panel}
-          </div>
-        )}
+        <div className={`${styles.panelShell} ${panel ? styles.panelShellOpen : ''}`.trim()}>
+          {displayPanel ? <div className={styles.panelContent}>{displayPanel}</div> : null}
+        </div>
       </div>
     </div>
   );

@@ -29,6 +29,15 @@ if (-not (Test-Path "$RepoRoot\apps\desktop\node_modules")) {
 
 # ── Kill stale processes on ports we need ─────────────────────────────────────
 
+Write-Host "==> Rebuilding web frontend..."
+Push-Location "$RepoRoot\apps\web"
+npm run build
+if ($LASTEXITCODE -ne 0) {
+    Pop-Location
+    throw "Web build failed."
+}
+Pop-Location
+
 foreach ($port in @(8000, 8200, 5173)) {
     $conn = Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction SilentlyContinue
     if ($conn) {
