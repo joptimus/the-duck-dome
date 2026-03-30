@@ -1,0 +1,78 @@
+.bar {
+  height: 50px;
+  display: flex;
+  align-items: center;
+  padding: 0 18px;
+  gap: 10px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(17, 24, 39, 0.82);
+  backdrop-filter: blur(12px);
+  flex-shrink: 0;
+  position: relative;
+}
+
+.channelName {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text-bright);
+  letter-spacing: var(--ls-xs);
+}
+
+.waveformWrap {
+  margin-left: 8px;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.agentStrip {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 5px 14px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.012);
+  border: 1px solid var(--border);
+  animation: borderGlow 6s ease-in-out infinite;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.agentStrip:hover {
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.agentChip {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.agentLogoWrap {
+  position: relative;
+  display: flex;
+}
+
+.statusDot {
+  position: absolute;
+  bottom: -1px;
+  right: -1px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  border: 1.5px solid var(--bg-surface);
+}
+
+.agentName {
+  font-family: var(--font-body);
+  font-size: 11.5px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 3px;
+  margin-left: 6px;
+}
+
