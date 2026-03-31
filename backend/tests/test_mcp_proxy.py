@@ -8,6 +8,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from duckdome.wrapper.mcp_proxy import McpProxy, _SAFE_TOOLS
+from duckdome.wrapper.safe_tools import DUCKDOME_STARTUP_SAFE_TOOLS
 
 
 class _FakeMcpHandler(BaseHTTPRequestHandler):
@@ -163,10 +164,7 @@ def test_chat_read_sender_is_injected_for_legacy_compat():
 
 def test_safe_tools_list():
     """Verify all DuckDome chat tools are in the safe list."""
-    assert "chat_send" in _SAFE_TOOLS
-    assert "chat_join" in _SAFE_TOOLS
-    assert "chat_read" in _SAFE_TOOLS
-    assert "chat_rules" in _SAFE_TOOLS
+    assert _SAFE_TOOLS == set(DUCKDOME_STARTUP_SAFE_TOOLS)
 
 
 def test_chat_join_sets_channel_context():

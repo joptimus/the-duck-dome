@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from duckdome.wrapper.safe_tools import (
+    DUCKDOME_STARTUP_SAFE_TOOLS,
+    claude_allowed_mcp_tools,
+)
+
 
 @dataclass
 class LaunchArgs:
@@ -24,14 +29,23 @@ def build_launch_args(
                     "claude",
                     "--mcp-config", str(mcp_config_path),
                     "--strict-mcp-config",
+                    "--allowedTools", *claude_allowed_mcp_tools(),
                 ],
             )
         case "codex":
+            cmd = [
+                "codex",
+                "-c", f'mcp_servers.duckdome.url="{mcp_url}"',
+            ]
+            for tool_name in DUCKDOME_STARTUP_SAFE_TOOLS:
+                cmd.extend(
+                    [
+                        "-c",
+                        f'mcp_servers.duckdome.tools.{tool_name}.approval_mode="never"',
+                    ]
+                )
             return LaunchArgs(
-                cmd=[
-                    "codex",
-                    "-c", f'mcp_servers.duckdome.url="{mcp_url}"',
-                ],
+                cmd=cmd,
             )
         case "gemini":
             return LaunchArgs(

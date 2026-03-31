@@ -23,6 +23,8 @@ from socketserver import ThreadingMixIn
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from duckdome.wrapper.safe_tools import DUCKDOME_STARTUP_SAFE_TOOLS
+
 logger = logging.getLogger(__name__)
 
 # MCP tools and which parameter should be forced by the proxy.
@@ -39,12 +41,7 @@ _TOOL_IDENTITY_PARAMS: dict[str, str | None] = {
 }
 
 # Tools that are always safe to execute without approval.
-_SAFE_TOOLS = {
-    "chat_send",
-    "chat_join",
-    "chat_read",
-    "chat_rules",
-}
+_SAFE_TOOLS = set(DUCKDOME_STARTUP_SAFE_TOOLS)
 
 _APPROVAL_POLL_INTERVAL = 1.0  # seconds
 _APPROVAL_TIMEOUT = 120  # seconds
