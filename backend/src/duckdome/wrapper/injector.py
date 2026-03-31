@@ -7,23 +7,59 @@ from __future__ import annotations
 import logging
 import subprocess
 import sys
+import time
 
 logger = logging.getLogger(__name__)
 
 
-def inject(text: str, pid: int, delay: float = 0.01) -> bool:
+def inject(
+    text: str,
+    pid: int | None = None,
+    delay: float = 0.01,
+    *,
+    tmux_session: str | None = None,
+) -> bool:
     """Inject text + Enter into the agent process's console.
 
-    On Windows: spawns a helper subprocess that uses WriteConsoleInputW.
-    On other platforms: raises NotImplementedError (tmux support TODO).
+    On Windows: uses WriteConsoleInputW via a helper subprocess (requires pid).
+    On Mac/Linux: uses tmux send-keys (requires tmux_session).
     """
     if sys.platform == "win32":
+        if pid is None:
+            logger.error("inject: pid required on Windows")
+            return False
         return _inject_via_subprocess(text, pid, delay)
     else:
-        raise NotImplementedError(
-            "Keystroke injection not yet implemented for this platform. "
-            "Future: tmux send-keys support."
+        if tmux_session is None:
+            raise NotImplementedError(
+                "Keystroke injection on Mac/Linux requires tmux_session parameter."
+            )
+        return _inject_via_tmux(text, tmux_session, delay)
+
+
+def _inject_via_tmux(text: str, session_name: str, delay: float) -> bool:
+    """Send text + Enter to a tmux pane via tmux send-keys."""
+    try:
+        result = subprocess.run(
+            ["tmux", "send-keys", "-t", session_name, "-l", text],
+            capture_output=True,
         )
+        if result.returncode != 0:
+            logger.error(
+                "tmux send-keys failed (exit=%d): %s",
+                result.returncode,
+                result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+            return False
+        time.sleep(delay)
+        subprocess.run(
+            ["tmux", "send-keys", "-t", session_name, "Enter"],
+            capture_output=True,
+        )
+        return True
+    except Exception:
+        logger.exception("tmux injection failed for session %s", session_name)
+        return False
 
 
 def _inject_via_subprocess(text: str, pid: int, delay: float) -> bool:
