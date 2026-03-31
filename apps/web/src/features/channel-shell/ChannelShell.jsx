@@ -642,9 +642,13 @@ export default function ChannelShell() {
         if (targets.length === 0) {
           return;
         }
-        await Promise.allSettled(
+        const triggerResults = await Promise.allSettled(
           targets.map((agentType) => triggerAgent(agentType, "user", text, activeChannelId)),
         );
+        const anyFailed = triggerResults.some((r) => r.status === "rejected");
+        if (anyFailed) {
+          setMessagesError("One or more agents are not running");
+        }
       })
       .catch((error) => {
         console.error("Failed to send message:", error);

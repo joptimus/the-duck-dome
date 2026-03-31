@@ -70,7 +70,7 @@ def _wait_for_mcp(port: int = 8200, timeout: float = 10.0) -> None:
     logger.warning("MCP server not ready after %.0fs — starting agents anyway", timeout)
 
 
-def _start_agents_deferred(wrapper_service) -> None:
+def _start_agents_deferred(wrapper_service, stop_event: threading.Event) -> None:
     """Start agents in a background thread after the full server is up.
 
     Uvicorn doesn't serve requests until the lifespan context yields,
@@ -81,12 +81,18 @@ def _start_agents_deferred(wrapper_service) -> None:
     import shutil
 
     _wait_for_mcp(port=8200)
+    if stop_event.is_set():
+        return
 
     # Also wait for FastAPI to be serving (the proxy needs :8000 for
     # tool approval API calls)
     _wait_for_http(port=8000)
+    if stop_event.is_set():
+        return
 
     for agent_type in ["claude", "codex", "gemini"]:
+        if stop_event.is_set():
+            break
         if shutil.which(agent_type):
             wrapper_service.start_agent(agent_type)
         else:
@@ -127,9 +133,10 @@ async def _lifespan(application: FastAPI):
     # Start agents in a background thread — they need both the MCP
     # server (:8200) and FastAPI (:8000) to be fully serving first.
     wrapper_service = application.state.wrapper_service
+    launcher_stop = threading.Event()
     agent_thread = threading.Thread(
         target=_start_agents_deferred,
-        args=(wrapper_service,),
+        args=(wrapper_service, launcher_stop),
         daemon=True,
         name="agent-launcher",
     )
@@ -137,7 +144,9 @@ async def _lifespan(application: FastAPI):
 
     yield
 
-    # Cleanup
+    # Signal the launcher to stop before tearing down agent processes,
+    # so it doesn't start new agents while stop_all() is running.
+    launcher_stop.set()
     wrapper_service.stop_all()
 
 

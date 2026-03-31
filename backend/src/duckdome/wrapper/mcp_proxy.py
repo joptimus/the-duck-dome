@@ -204,18 +204,29 @@ class McpProxy:
                 # Inject agent identity into tool calls
                 body = self._maybe_inject_sender(raw)
 
-                # Check if tool call needs approval
-                tool_call = self._extract_tool_call(body)
-                if tool_call and proxy._requires_approval(
-                    tool_call["name"], tool_call["args"]
-                ):
+                # Check if any tool call in the request needs approval.
+                # _extract_tool_calls returns all tools/call entries in the batch.
+                all_tool_calls = self._extract_tool_calls(body)
+                calls_needing_approval = [
+                    tc for tc in all_tool_calls
+                    if proxy._requires_approval(tc["name"], tc["args"])
+                ]
+                if calls_needing_approval:
+                    if len(calls_needing_approval) > 1:
+                        # Can't safely partial-approve a batch with multiple gated calls.
+                        self._send_jsonrpc_denied(
+                            calls_needing_approval[0]["id"],
+                            "batch contains multiple tool calls requiring approval",
+                        )
+                        return
+                    tc = calls_needing_approval[0]
                     approved, reason = proxy._request_tool_approval(
-                        tool_call["name"],
-                        tool_call["args"],
-                        channel=tool_call.get("channel", "general"),
+                        tc["name"],
+                        tc["args"],
+                        channel=tc.get("channel", "general"),
                     )
                     if not approved:
-                        self._send_jsonrpc_denied(tool_call["id"], reason)
+                        self._send_jsonrpc_denied(tc["id"], reason)
                         return
 
                 # Forward to upstream
@@ -351,15 +362,16 @@ class McpProxy:
                     return json.dumps(data).encode("utf-8")
                 return raw
 
-            def _extract_tool_call(self, raw: bytes) -> dict | None:
-                """Extract tool call info from JSON-RPC request."""
+            def _extract_tool_calls(self, raw: bytes) -> list[dict]:
+                """Extract all tool call entries from a JSON-RPC request (handles batches)."""
                 if not raw:
-                    return None
+                    return []
                 try:
                     data = json.loads(raw)
                 except Exception:
-                    return None
+                    return []
                 messages = data if isinstance(data, list) else [data]
+                result = []
                 for msg in messages:
                     if not isinstance(msg, dict):
                         continue
@@ -368,13 +380,13 @@ class McpProxy:
                     params = msg.get("params", {}) or {}
                     args = params.get("arguments", {}) or {}
                     channel = str(args.get("channel", "general")).strip() or "general"
-                    return {
+                    result.append({
                         "id": msg.get("id"),
                         "name": str(params.get("name", "")).strip(),
                         "args": args if isinstance(args, dict) else {},
                         "channel": channel,
-                    }
-                return None
+                    })
+                return result
 
             def _send_jsonrpc_denied(self, req_id, reason: str):
                 """Send a JSON-RPC error response for denied tool calls."""

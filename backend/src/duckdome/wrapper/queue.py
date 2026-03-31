@@ -51,6 +51,10 @@ def read_queue_entries(data_dir: Path, agent_name: str) -> list[dict]:
     entries = []
     for line in text.strip().splitlines():
         line = line.strip()
-        if line:
+        if not line:
+            continue
+        try:
             entries.append(json.loads(line))
+        except json.JSONDecodeError:
+            pass  # Skip malformed lines — don't crash the queue watcher
     return entries

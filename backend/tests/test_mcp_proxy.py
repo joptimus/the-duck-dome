@@ -11,7 +11,9 @@ from duckdome.wrapper.mcp_proxy import McpProxy, _SAFE_TOOLS
 
 
 class _FakeMcpHandler(BaseHTTPRequestHandler):
-    """Minimal fake MCP server that echoes tool calls."""
+    """Minimal fake MCP server that captures and echoes tool calls."""
+
+    last_body: bytes = b""
 
     def log_message(self, format, *args):
         pass
@@ -19,6 +21,7 @@ class _FakeMcpHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         length = int(self.headers.get("Content-Length", 0))
         body = self.rfile.read(length)
+        _FakeMcpHandler.last_body = body
         # Echo back a success JSON-RPC response
         resp = json.dumps({
             "jsonrpc": "2.0",
@@ -95,7 +98,8 @@ def test_safe_tools_pass_through(proxy):
 
 
 def test_sender_injection(proxy):
-    """Proxy should inject agent_name into sender param."""
+    """Proxy should overwrite wrong sender with the agent name."""
+    _FakeMcpHandler.last_body = b""
     payload = json.dumps({
         "jsonrpc": "2.0",
         "id": 1,
@@ -112,9 +116,12 @@ def test_sender_injection(proxy):
         method="POST",
         headers={"Content-Type": "application/json"},
     )
-    # Should succeed (safe tool) even though sender was wrong
     with urlopen(req, timeout=5) as resp:
         assert resp.status == 200
+
+    # Verify the forwarded body has the agent name injected, not "wrong"
+    forwarded = json.loads(_FakeMcpHandler.last_body)
+    assert forwarded["params"]["arguments"]["sender"] == "claude"
 
 
 def test_safe_tools_list():

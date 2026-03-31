@@ -63,6 +63,10 @@ class TriggerStore:
                 raise ValueError(
                     f"trigger.id mismatch: expected {trigger_id}, got {trigger.id}"
                 )
+            old = self._triggers[trigger_id]
+            if old.dedupe_key != trigger.dedupe_key:
+                self._dedupe_index.pop(old.dedupe_key, None)
+                self._dedupe_index[trigger.dedupe_key] = trigger_id
             self._triggers[trigger_id] = trigger
             self._save()
             return trigger

@@ -30,7 +30,7 @@ def test_codex_launch_args():
     assert result.cmd[0] == "codex"
     # Codex uses -c flags, not --mcp-config
     assert "-c" in result.cmd
-    assert any("duckdome" in arg for arg in result.cmd)
+    assert any("http://localhost:8200/mcp" in arg for arg in result.cmd)
     # No dangerous permissions flags
     assert "--dangerously-bypass-approvals-and-sandbox" not in result.cmd
 

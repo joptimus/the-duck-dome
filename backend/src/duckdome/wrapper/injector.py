@@ -34,6 +34,9 @@ def _inject_via_subprocess(text: str, pid: int, delay: float) -> bool:
     Running in a separate process avoids this entirely.
     """
     try:
+        # Scale timeout to payload size: each keystroke takes ~delay seconds,
+        # plus a fixed 10s buffer for subprocess startup and attach overhead.
+        timeout = max(30, int(len(text) * delay) + 10)
         result = subprocess.run(
             [
                 sys.executable, "-m", "duckdome.wrapper.injector_windows",
@@ -41,7 +44,7 @@ def _inject_via_subprocess(text: str, pid: int, delay: float) -> bool:
             ],
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=timeout,
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         if result.returncode != 0:

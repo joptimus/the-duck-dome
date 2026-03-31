@@ -143,6 +143,7 @@ class AgentProcessManager:
         self._mcp_url = f"http://{mcp_host}:{mcp_port}/mcp"
         self._app_port = app_port
         self._agents: dict[str, AgentProcess] = {}
+        self._starting: set[str] = set()
         self._lock = threading.Lock()
 
     def start_agent(
@@ -156,9 +157,13 @@ class AgentProcessManager:
         Returns True if started, False if already running.
         """
         with self._lock:
+            if agent_type in self._starting:
+                logger.info("[%s] start already in progress", agent_type)
+                return False
             if agent_type in self._agents and self._is_alive(agent_type):
                 logger.info("[%s] already running (pid=%s)", agent_type, self._agents[agent_type].pid)
                 return False
+            self._starting.add(agent_type)
 
         # Start MCP proxy for this agent (gates tool calls through approval)
         proxy = McpProxy(
@@ -168,6 +173,8 @@ class AgentProcessManager:
         )
         if not proxy.start():
             logger.error("[%s] failed to start MCP proxy", agent_type)
+            with self._lock:
+                self._starting.discard(agent_type)
             return False
         proxy_mcp_url = proxy.mcp_url
         logger.info("[%s] MCP proxy at %s", agent_type, proxy_mcp_url)
@@ -205,33 +212,38 @@ class AgentProcessManager:
         agent_proc = AgentProcess(agent_type=agent_type, proxy=proxy)
 
         def _run_loop():
-            while not agent_proc.stop_event.is_set():
-                logger.info("[%s] starting process: %s", agent_type, " ".join(final_cmd))
-                try:
-                    proc = subprocess.Popen(
-                        final_cmd,
-                        cwd=cwd,
-                        env=env,
-                        creationflags=creation_flags,
-                    )
-                    agent_proc.proc = proc
-                    agent_proc.pid = proc.pid
-                    agent_proc.started_at = time.time()
-                    agent_proc.ready_event.set()
-                    logger.info("[%s] process started pid=%d", agent_type, proc.pid)
+            try:
+                while not agent_proc.stop_event.is_set():
+                    logger.info("[%s] starting process: %s", agent_type, " ".join(final_cmd))
+                    try:
+                        proc = subprocess.Popen(
+                            final_cmd,
+                            cwd=cwd,
+                            env=env,
+                            creationflags=creation_flags,
+                        )
+                        agent_proc.proc = proc
+                        agent_proc.pid = proc.pid
+                        agent_proc.started_at = time.time()
+                        agent_proc.ready_event.set()
+                        logger.info("[%s] process started pid=%d", agent_type, proc.pid)
 
-                    proc.wait()
-                    logger.warning("[%s] process exited (code=%s)", agent_type, proc.returncode)
-                except FileNotFoundError:
-                    logger.error("[%s] CLI not found in PATH", agent_type)
-                    break
-                except Exception:
-                    logger.exception("[%s] process error", agent_type)
+                        proc.wait()
+                        logger.warning("[%s] process exited (code=%s)", agent_type, proc.returncode)
+                    except FileNotFoundError:
+                        logger.error("[%s] CLI not found in PATH", agent_type)
+                        break
+                    except Exception:
+                        logger.exception("[%s] process error", agent_type)
 
-                if not auto_restart or agent_proc.stop_event.is_set():
-                    break
-                logger.info("[%s] restarting in 5s...", agent_type)
-                agent_proc.stop_event.wait(5.0)
+                    if not auto_restart or agent_proc.stop_event.is_set():
+                        break
+                    logger.info("[%s] restarting in 5s...", agent_type)
+                    agent_proc.stop_event.wait(5.0)
+            finally:
+                # Always unblock the queue watcher and mark stop, regardless of exit path.
+                agent_proc.stop_event.set()
+                agent_proc.ready_event.set()
 
         # Start process thread
         proc_thread = threading.Thread(target=_run_loop, daemon=True, name=f"agent-{agent_type}")
@@ -249,6 +261,7 @@ class AgentProcessManager:
 
         with self._lock:
             self._agents[agent_type] = agent_proc
+            self._starting.discard(agent_type)
 
         return True
 
@@ -335,7 +348,8 @@ class AgentProcessManager:
                 )
                 logger.info("[%s] injecting prompt for channel=%s", agent_type, channel)
                 try:
-                    inject(injection, pid, delay=INJECT_DELAY)
+                    if not inject(injection, pid, delay=INJECT_DELAY):
+                        logger.warning("[%s] injection returned False for channel=%s", agent_type, channel)
                 except Exception:
                     logger.exception("[%s] injection failed", agent_type)
 
