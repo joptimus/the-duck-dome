@@ -300,8 +300,8 @@ class McpProxy:
                 if calls_needing_approval:
                     if len(calls_needing_approval) > 1:
                         # Can't safely partial-approve a batch with multiple gated calls.
-                        self._send_jsonrpc_denied(
-                            calls_needing_approval[0]["id"],
+                        self._send_jsonrpc_batch_denied(
+                            all_tool_calls,
                             "batch contains multiple tool calls requiring approval",
                         )
                         return
@@ -312,7 +312,7 @@ class McpProxy:
                         channel=tc.get("channel", "general"),
                     )
                     if not approved:
-                        self._send_jsonrpc_denied(tc["id"], reason)
+                        self._send_jsonrpc_batch_denied(all_tool_calls, reason)
                         return
 
                 # Forward to upstream
@@ -407,7 +407,7 @@ class McpProxy:
                 return proxy._rewrite_tool_arguments(raw)
 
             def _send_jsonrpc_denied(self, req_id, reason: str):
-                """Send a JSON-RPC error response for denied tool calls."""
+                """Send a JSON-RPC error response for a single denied tool call."""
                 payload = {
                     "jsonrpc": "2.0",
                     "id": req_id,
@@ -417,6 +417,26 @@ class McpProxy:
                     },
                 }
                 body = json.dumps(payload).encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def _send_jsonrpc_batch_denied(self, tool_calls: list[dict], reason: str):
+                """Send JSON-RPC error responses for all calls in a denied batch."""
+                errors = [
+                    {
+                        "jsonrpc": "2.0",
+                        "id": tc.get("id"),
+                        "error": {
+                            "code": -32001,
+                            "message": f"Tool call denied: {reason}",
+                        },
+                    }
+                    for tc in tool_calls
+                ]
+                body = json.dumps(errors).encode("utf-8")
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.send_header("Content-Length", str(len(body)))

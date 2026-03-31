@@ -38,10 +38,14 @@ def read_queue_entries(data_dir: Path, agent_name: str) -> list[dict]:
     path = _queue_path(data_dir, agent_name)
     tmp = path.with_suffix(".consuming")
     with _lock:
-        if not path.exists():
+        # Recover stale .consuming file from a previous crash
+        if tmp.exists() and not path.exists():
+            pass  # use the stale .consuming file directly
+        elif not path.exists():
             return []
-        # Atomic rename — no window where entries can be lost
-        path.rename(tmp)
+        else:
+            # Atomic rename — no window where entries can be lost
+            path.rename(tmp)
 
     try:
         text = tmp.read_text(encoding="utf-8")

@@ -96,6 +96,10 @@ def test_safe_tools_pass_through(proxy):
 
     assert data["result"]["content"][0]["text"] == "ok"
 
+    # Verify the proxy forwarded the request with the correct sender injection
+    forwarded = json.loads(_FakeMcpHandler.last_body)
+    assert forwarded["params"]["arguments"]["sender"] == "claude"
+
 
 def test_chat_join_agent_type_injection():
     proxy = McpProxy(

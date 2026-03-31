@@ -84,7 +84,7 @@ class RunnerService:
                 error = result.stderr.strip() or f"exit code {result.exit_code}"
                 run.error_summary = error[:500]
                 self._triggers.fail_trigger(trigger.id, error[:500])
-                log.warning("[%s] trigger failed", agent_type)
+                log.info("[%s] trigger failed (exit_code=%d)", agent_type, result.exit_code)
 
         except Exception as e:
             run.ended_at = time.time()

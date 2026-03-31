@@ -65,6 +65,11 @@ class TriggerStore:
                 )
             old = self._triggers[trigger_id]
             if old.dedupe_key != trigger.dedupe_key:
+                existing_owner = self._dedupe_index.get(trigger.dedupe_key)
+                if existing_owner is not None and existing_owner != trigger_id:
+                    raise ValueError(
+                        f"dedupe_key '{trigger.dedupe_key}' already belongs to trigger {existing_owner}"
+                    )
                 self._dedupe_index.pop(old.dedupe_key, None)
                 self._dedupe_index[trigger.dedupe_key] = trigger_id
             self._triggers[trigger_id] = trigger

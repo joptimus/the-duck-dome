@@ -52,10 +52,17 @@ def _inject_via_tmux(text: str, session_name: str, delay: float) -> bool:
             )
             return False
         time.sleep(delay)
-        subprocess.run(
+        enter_result = subprocess.run(
             ["tmux", "send-keys", "-t", session_name, "Enter"],
             capture_output=True,
         )
+        if enter_result.returncode != 0:
+            logger.error(
+                "tmux send-keys Enter failed (exit=%d): %s",
+                enter_result.returncode,
+                enter_result.stderr.decode("utf-8", errors="replace").strip(),
+            )
+            return False
         return True
     except Exception:
         logger.exception("tmux injection failed for session %s", session_name)

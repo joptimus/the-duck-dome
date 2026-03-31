@@ -277,6 +277,21 @@ class AgentProcessManager:
                 return False
             self._starting.add(agent_type)
 
+        try:
+            return self._start_agent_inner(agent_type, cwd, auto_restart)
+        except Exception:
+            logger.exception("[%s] start_agent failed", agent_type)
+            return False
+        finally:
+            with self._lock:
+                self._starting.discard(agent_type)
+
+    def _start_agent_inner(
+        self,
+        agent_type: str,
+        cwd: str | None,
+        auto_restart: bool,
+    ) -> bool:
         proxy: McpProxy | None = None
         mcp_target_url = self._mcp_url
         if _should_use_proxy(agent_type):
@@ -288,8 +303,6 @@ class AgentProcessManager:
             )
             if not proxy.start():
                 logger.error("[%s] failed to start MCP proxy", agent_type)
-                with self._lock:
-                    self._starting.discard(agent_type)
                 return False
             mcp_target_url = proxy.mcp_url
             logger.info("[%s] MCP proxy at %s", agent_type, mcp_target_url)
@@ -461,7 +474,6 @@ class AgentProcessManager:
 
         with self._lock:
             self._agents[agent_type] = agent_proc
-            self._starting.discard(agent_type)
 
         return True
 
@@ -487,7 +499,10 @@ class AgentProcessManager:
             except subprocess.TimeoutExpired:
                 agent_proc.proc.kill()
         if agent_proc.proxy:
-            agent_proc.proxy.stop()
+            try:
+                agent_proc.proxy.stop()
+            except Exception:
+                logger.exception("[%s] proxy shutdown error", agent_type)
         return True
 
     def stop_all(self) -> None:
@@ -619,12 +634,11 @@ class AgentProcessManager:
             if agent_proc.stop_event.is_set():
                 break
 
-            entries = read_queue_entries(self._data_dir, agent_type)
-            if not entries:
+            if not self._is_alive(agent_type):
                 continue
 
-            if not self._is_alive(agent_type):
-                logger.warning("[%s] queue has entries but process not running", agent_type)
+            entries = read_queue_entries(self._data_dir, agent_type)
+            if not entries:
                 continue
 
             for entry in entries:

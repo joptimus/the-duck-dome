@@ -94,6 +94,10 @@ class McpBridge:
                 return None, "Error: Agent not registered. Call chat_join first."
             effective_channel = channel.strip() if channel.strip() else "general"
             self._identity_store.set(ctx, channel=effective_channel, agent_type=sender_name)
+            try:
+                self._trigger_service.register_agent(channel_id=effective_channel, agent_type=sender_name)
+            except (ValueError, Exception):
+                pass  # best-effort — don't block the tool call
             return sender_name, effective_channel
 
         @self._mcp.tool()
@@ -208,6 +212,10 @@ class McpBridge:
             identity = self._identity_store.get(ctx)
             channel = identity.channel if identity is not None else "general"
             self._identity_store.set(ctx, channel=channel, agent_type=chosen)
+            try:
+                self._trigger_service.register_agent(channel_id=channel, agent_type=chosen)
+            except (ValueError, Exception):
+                pass  # best-effort
             return json.dumps({"confirmed_name": chosen}, ensure_ascii=False)
 
         @self._mcp.tool()
