@@ -116,6 +116,26 @@ QUEUE_POLL_INTERVAL = 2.0  # seconds
 INJECT_DELAY = 0.01  # seconds between keystrokes
 
 
+def _open_agent_terminal(tmux_session: str) -> None:
+    """Open a visible terminal window attached to the agent's tmux session.
+
+    On macOS: opens a new Terminal.app window that attaches to the session.
+    On Linux: no-op — user can attach manually with tmux attach -t <session>.
+    On Windows: not used (agents use CREATE_NEW_CONSOLE instead).
+    """
+    if sys.platform != "darwin":
+        return
+    attach_cmd = f"tmux attach-session -t {shlex.quote(tmux_session)}"
+    # Tell Terminal.app to open a new window running the attach command.
+    # The window title will show the session name; closing the window leaves
+    # the tmux session (and the agent) running in the background.
+    script = f'tell application "Terminal" to do script {shlex.quote(attach_cmd)}'
+    try:
+        subprocess.Popen(["osascript", "-e", script])
+    except Exception:
+        logger.warning("[%s] could not open Terminal.app window", tmux_session)
+
+
 @dataclass
 class AgentProcess:
     agent_type: str
@@ -287,6 +307,9 @@ class AgentProcessManager:
             logger.info(
                 "[%s] tmux session started: %s (pid=%s)", agent_type, session, agent_proc.pid
             )
+
+            # Open a visible terminal window attached to this tmux session
+            _open_agent_terminal(session)
 
             # Poll until the session exits
             while not agent_proc.stop_event.is_set():
