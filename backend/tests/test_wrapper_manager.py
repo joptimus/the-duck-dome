@@ -4,6 +4,7 @@ from duckdome.wrapper.manager import (
     AgentProcess,
     AgentProcessManager,
     _build_trigger_prompt,
+    _resolve_inject_delay,
     _should_use_proxy,
 )
 
@@ -66,6 +67,11 @@ def test_claude_uses_direct_mcp_like_legacy_wrapper():
     assert _should_use_proxy("claude") is False
     assert _should_use_proxy("codex") is True
     assert _should_use_proxy("gemini") is True
+
+
+def test_codex_uses_slower_inject_delay():
+    assert _resolve_inject_delay("codex") == 0.3
+    assert _resolve_inject_delay("claude") == 0.01
 
 
 def test_post_agent_heartbeat_uses_joined_channel(tmp_path, monkeypatch):

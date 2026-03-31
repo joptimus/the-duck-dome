@@ -57,6 +57,22 @@ def _should_use_proxy(agent_type: str) -> bool:
     return agent_type != "claude"
 
 
+def _resolve_inject_delay(agent_type: str) -> float:
+    """Return the per-agent keystroke delay used for console injection.
+
+    This feature replaces the legacy per-provider injection timing from
+    ``agentchattr/apps/server/src/wrapper.py``.
+
+    Differences from legacy behavior:
+    - Codex keeps a slower Windows-friendly delay so its TUI reliably
+      processes the injected prompt before Enter is sent.
+    - Other agents keep DuckDome's faster default delay.
+    """
+    if agent_type == "codex":
+        return 0.3
+    return 0.01
+
+
 def _resolve_cmd_shim(cmd: list[str]) -> list[str]:
     """Resolve a .cmd shim to the underlying node command on Windows.
 
@@ -237,6 +253,7 @@ class AgentProcess:
     stop_event: threading.Event = field(default_factory=threading.Event)
     ready_event: threading.Event = field(default_factory=threading.Event)
     started_at: float | None = None
+    inject_delay: float = 0.01
 
 
 class AgentProcessManager:
@@ -343,7 +360,11 @@ class AgentProcessManager:
         if sys.platform == "win32":
             creation_flags = subprocess.CREATE_NEW_CONSOLE
 
-        agent_proc = AgentProcess(agent_type=agent_type, proxy=proxy)
+        agent_proc = AgentProcess(
+            agent_type=agent_type,
+            proxy=proxy,
+            inject_delay=_resolve_inject_delay(agent_type),
+        )
 
         def _run_one_popen_iteration() -> bool:
             """Run one lifecycle via Popen (Windows). Returns False to stop retrying."""
@@ -655,10 +676,16 @@ class AgentProcessManager:
                 logger.info("[%s] injecting prompt for channel=%s", agent_type, channel)
                 try:
                     if sys.platform == "win32":
-                        success = inject(injection, agent_proc.pid, delay=INJECT_DELAY)
+                        success = inject(
+                            injection,
+                            agent_proc.pid,
+                            delay=agent_proc.inject_delay,
+                        )
                     else:
                         success = inject(
-                            injection, delay=INJECT_DELAY, tmux_session=agent_proc.tmux_session
+                            injection,
+                            delay=agent_proc.inject_delay,
+                            tmux_session=agent_proc.tmux_session,
                         )
                     if not success:
                         logger.warning("[%s] injection returned False for channel=%s", agent_type, channel)
