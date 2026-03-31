@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from duckdome.wrapper.injector import inject
-from duckdome.wrapper.mcp_config import generate_gemini_settings, generate_mcp_config
+from duckdome.wrapper.mcp_config import generate_agent_token, generate_gemini_settings, generate_mcp_config
 from duckdome.wrapper.mcp_proxy import McpProxy
 from duckdome.wrapper.providers import build_launch_args
 from duckdome.wrapper.queue import read_queue_entries
@@ -179,14 +179,18 @@ class AgentProcessManager:
         proxy_mcp_url = proxy.mcp_url
         logger.info("[%s] MCP proxy at %s", agent_type, proxy_mcp_url)
 
-        # Generate MCP config pointing to the proxy (not the real MCP server)
+        # Generate MCP config pointing to the proxy (not the real MCP server).
+        # Including a static Bearer token suppresses Claude Code's OAuth
+        # discovery flow, which would otherwise block startup with an
+        # interactive auth prompt for a headless background process.
+        token = generate_agent_token()
         if agent_type == "gemini":
             mcp_config_path = generate_gemini_settings(
-                self._config_dir, agent_type, proxy_mcp_url
+                self._config_dir, agent_type, proxy_mcp_url, token
             )
         else:
             mcp_config_path = generate_mcp_config(
-                self._config_dir, agent_type, proxy_mcp_url
+                self._config_dir, agent_type, proxy_mcp_url, token
             )
 
         # Build CLI args
