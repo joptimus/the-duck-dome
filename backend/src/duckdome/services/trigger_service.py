@@ -9,6 +9,7 @@ from duckdome.stores.trigger_store import TriggerStore
 from duckdome.stores.base import BaseChannelStore
 
 if TYPE_CHECKING:
+    from duckdome.services.message_service import MessageService
     from duckdome.ws.manager import ConnectionManager
 
 
@@ -18,16 +19,31 @@ class TriggerService:
         trigger_store: TriggerStore,
         channel_store: BaseChannelStore,
         ws_manager: ConnectionManager | None = None,
+        message_service: MessageService | None = None,
     ) -> None:
         self._triggers = trigger_store
         self._channels = channel_store
         self._ws_manager = ws_manager
+        self._messages = message_service
 
     def _broadcast(self, event: dict) -> None:
         """Fire-and-forget broadcast to WebSocket clients (if manager is set)."""
         if self._ws_manager is None:
             return
         self._ws_manager.broadcast_sync(event)
+
+    def set_message_service(self, message_service: MessageService) -> None:
+        self._messages = message_service
+
+    def _post_system_event(self, *, channel_id: str, subtype: str, agent_type: str, text: str) -> None:
+        if self._messages is None:
+            return
+        self._messages.post_system_event(
+            channel=channel_id,
+            subtype=subtype,
+            agent=agent_type,
+            text=text,
+        )
 
     # --- Trigger lifecycle ---
 
@@ -165,11 +181,19 @@ class TriggerService:
         agent_id = f"{channel_id}:{agent_type}"
         existing = self._channels.get_agent(agent_id)
         if existing:
+            was_offline = existing.status == "offline"
             existing.status = "idle"
             existing.last_heartbeat = time.time()
             existing.last_error = None
             existing.current_task = None
             self._channels.update_agent(agent_id, existing)
+            if was_offline:
+                self._post_system_event(
+                    channel_id=channel_id,
+                    subtype="join",
+                    agent_type=agent_type,
+                    text="joined the channel",
+                )
             return existing
         agent = AgentInstance(
             channel_id=channel_id,
@@ -177,7 +201,14 @@ class TriggerService:
             status="idle",
             last_heartbeat=time.time(),
         )
-        return self._channels.add_agent(agent)
+        added = self._channels.add_agent(agent)
+        self._post_system_event(
+            channel_id=channel_id,
+            subtype="join",
+            agent_type=agent_type,
+            text="joined the channel",
+        )
+        return added
 
     def heartbeat(
         self, channel_id: str, agent_type: str
@@ -205,4 +236,12 @@ class TriggerService:
             return None
         agent.status = "offline"
         agent.current_task = None
-        return self._channels.update_agent(agent_id, agent)
+        updated = self._channels.update_agent(agent_id, agent)
+        if updated is not None:
+            self._post_system_event(
+                channel_id=channel_id,
+                subtype="leave",
+                agent_type=agent_type,
+                text="left the channel",
+            )
+        return updated

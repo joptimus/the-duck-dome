@@ -26,7 +26,7 @@ export function ChatTimeline({ messages = [], channelName, onApprove, onDeny }) 
         if (msg.sender_type === 'date_divider') {
           return <DateDivider key={msg.id} label={msg.text} />;
         }
-        if (msg.sender_type === 'system') {
+        if (msg.type === 'system' || msg.sender_type === 'system') {
           return <SystemMessage key={msg.id} msg={msg} idx={idx} />;
         }
         if (msg.sender_type === 'tool_approval') {

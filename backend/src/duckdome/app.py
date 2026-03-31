@@ -97,6 +97,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         trigger_service=trigger_service,
         ws_manager=ws_manager,
     )
+    trigger_service.set_message_service(message_service)
     tool_approval_service = ToolApprovalService(
         store=tool_approval_store,
         ws_manager=ws_manager,

@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { agentMeta } from '../../constants/agents';
 import { MessageToolbar } from './MessageToolbar';
 import styles from './MessageBubble.module.css';
@@ -24,28 +26,6 @@ function normalizeDisplayText(value) {
     .replaceAll('â€', '”')
     .replaceAll('â€¦', '…')
     .replaceAll('Â ', ' ');
-}
-
-function renderTextWithMentions(text) {
-  const parts = text.split(/(@\w+)/g);
-  return parts.map((part, i) => {
-    if (!part.startsWith('@')) return part;
-    const key = part.slice(1).toLowerCase();
-    const meta = agentMeta[key];
-    return (
-      <span
-        key={i}
-        className={styles.mention}
-        style={{
-          color: meta?.color || 'var(--blue)',
-          background: meta?.bg || 'rgba(0, 212, 255, 0.1)',
-          borderColor: meta?.border || 'rgba(0, 212, 255, 0.25)',
-        }}
-      >
-        {part}
-      </span>
-    );
-  });
 }
 
 function formatTime(ts) {
@@ -94,7 +74,31 @@ export function MessageBubble({ message, index = 0 }) {
           <span className={styles.timestamp}>{formatTime(timestamp)}</span>
         </div>
         <div className={styles.body}>
-          {renderTextWithMentions(normalizedText)}
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              a: ({ ...props }) => (
+                <a {...props} target="_blank" rel="noreferrer" className={styles.link} />
+              ),
+              code: ({ inline, className, children, ...props }) =>
+                inline ? (
+                  <code {...props} className={styles.inlineCode}>
+                    {children}
+                  </code>
+                ) : (
+                  <code {...props} className={`${styles.codeBlock} ${className || ''}`.trim()}>
+                    {children}
+                  </code>
+                ),
+              pre: ({ children }) => <pre className={styles.pre}>{children}</pre>,
+              p: ({ children }) => <p className={styles.paragraph}>{children}</p>,
+              ul: ({ children }) => <ul className={styles.list}>{children}</ul>,
+              ol: ({ children }) => <ol className={styles.list}>{children}</ol>,
+              blockquote: ({ children }) => <blockquote className={styles.blockquote}>{children}</blockquote>,
+            }}
+          >
+            {normalizedText}
+          </ReactMarkdown>
         </div>
 
         {hovered && <MessageToolbar messageId={message.id} />}
