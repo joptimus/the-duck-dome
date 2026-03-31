@@ -125,11 +125,12 @@ def _open_agent_terminal(tmux_session: str) -> None:
     """
     if sys.platform != "darwin":
         return
-    attach_cmd = f"tmux attach-session -t {shlex.quote(tmux_session)}"
+    attach_cmd = f"tmux attach-session -t {tmux_session}"
     # Tell Terminal.app to open a new window running the attach command.
     # The window title will show the session name; closing the window leaves
     # the tmux session (and the agent) running in the background.
-    script = f'tell application "Terminal" to do script {shlex.quote(attach_cmd)}'
+    # AppleScript requires double-quoted strings; shlex single-quotes are invalid.
+    script = f'tell application "Terminal" to do script "{attach_cmd}"'
     try:
         subprocess.Popen(["osascript", "-e", script])
     except Exception:
