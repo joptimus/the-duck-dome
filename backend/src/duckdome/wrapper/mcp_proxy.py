@@ -96,6 +96,7 @@ class McpProxy:
         self._server: _ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._joined_channel = "general"
+        self._has_joined = False
         self._state_lock = threading.Lock()
 
     @property
@@ -121,10 +122,15 @@ class McpProxy:
         normalized = str(channel).strip() or "general"
         with self._state_lock:
             self._joined_channel = normalized
+            self._has_joined = True
 
     def _get_joined_channel(self) -> str:
         with self._state_lock:
             return self._joined_channel
+
+    def _has_joined_channel(self) -> bool:
+        with self._state_lock:
+            return self._has_joined
 
     def _remember_channel_from_tool_args(self, tool_name: str, args: dict) -> None:
         if tool_name != "chat_join" or not isinstance(args, dict):

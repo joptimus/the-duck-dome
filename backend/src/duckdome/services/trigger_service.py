@@ -234,10 +234,11 @@ class TriggerService:
         agent = self._channels.get_agent(agent_id)
         if agent is None:
             return None
+        was_online = agent.status != "offline"
         agent.status = "offline"
         agent.current_task = None
         updated = self._channels.update_agent(agent_id, agent)
-        if updated is not None:
+        if updated is not None and was_online:
             self._post_system_event(
                 channel_id=channel_id,
                 subtype="leave",

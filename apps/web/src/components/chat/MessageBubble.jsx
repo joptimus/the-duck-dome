@@ -5,6 +5,8 @@ import { agentMeta } from '../../constants/agents';
 import { MessageToolbar } from './MessageToolbar';
 import styles from './MessageBubble.module.css';
 
+const MENTION_PATTERN = /(^|[\s(])(@[a-z0-9_-]+)/gi;
+
 const AGENT_META = {
   claude: { color: 'var(--agent-claude)', bg: 'var(--agent-claude-bg)', border: 'var(--agent-claude-border)' },
   codex: { color: 'var(--agent-codex)', bg: 'var(--agent-codex-bg)', border: 'var(--agent-codex-border)' },
@@ -31,6 +33,55 @@ function normalizeDisplayText(value) {
 function formatTime(ts) {
   const d = new Date(ts * 1000);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function splitTextIntoMentionNodes(value) {
+  const nodes = [];
+  let lastIndex = 0;
+
+  value.replaceAll(MENTION_PATTERN, (match, prefix, mention, offset) => {
+    if (offset > lastIndex) {
+      nodes.push({ type: 'text', value: value.slice(lastIndex, offset) });
+    }
+    if (prefix) {
+      nodes.push({ type: 'text', value: prefix });
+    }
+    nodes.push({
+      type: 'link',
+      url: `mention:${mention.slice(1).toLowerCase()}`,
+      children: [{ type: 'text', value: mention }],
+    });
+    lastIndex = offset + match.length;
+    return match;
+  });
+
+  if (lastIndex < value.length) {
+    nodes.push({ type: 'text', value: value.slice(lastIndex) });
+  }
+
+  return nodes.length > 0 ? nodes : [{ type: 'text', value }];
+}
+
+function transformMentionNodes(node) {
+  if (!node || typeof node !== 'object') return;
+  if (!Array.isArray(node.children)) return;
+
+  const nextChildren = [];
+  for (const child of node.children) {
+    if (child?.type === 'text' && typeof child.value === 'string' && child.value.includes('@')) {
+      nextChildren.push(...splitTextIntoMentionNodes(child.value));
+      continue;
+    }
+    transformMentionNodes(child);
+    nextChildren.push(child);
+  }
+  node.children = nextChildren;
+}
+
+function remarkMentions() {
+  return (tree) => {
+    transformMentionNodes(tree);
+  };
 }
 
 export function MessageBubble({ message, index = 0 }) {
@@ -75,11 +126,30 @@ export function MessageBubble({ message, index = 0 }) {
         </div>
         <div className={styles.body}>
           <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
+            remarkPlugins={[remarkGfm, remarkMentions]}
             components={{
-              a: ({ ...props }) => (
-                <a {...props} target="_blank" rel="noreferrer" className={styles.link} />
-              ),
+              a: ({ href, children, ...props }) => {
+                if (typeof href === 'string' && href.startsWith('mention:')) {
+                  const key = href.slice('mention:'.length).toLowerCase();
+                  const meta = agentMeta[key];
+                  return (
+                    <span
+                      {...props}
+                      className={styles.mention}
+                      style={{
+                        color: meta?.color || 'var(--blue)',
+                        background: meta?.bg || 'rgba(0, 212, 255, 0.1)',
+                        borderColor: meta?.border || 'rgba(0, 212, 255, 0.25)',
+                      }}
+                    >
+                      {children}
+                    </span>
+                  );
+                }
+                return (
+                  <a href={href} {...props} target="_blank" rel="noreferrer" className={styles.link} />
+                );
+              },
               code: ({ inline, className, children, ...props }) =>
                 inline ? (
                   <code {...props} className={styles.inlineCode}>

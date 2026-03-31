@@ -254,6 +254,7 @@ class AgentProcess:
     ready_event: threading.Event = field(default_factory=threading.Event)
     started_at: float | None = None
     inject_delay: float = 0.01
+    presence_channel: str | None = None
 
 
 class AgentProcessManager:
@@ -524,6 +525,7 @@ class AgentProcessManager:
                 agent_proc.proxy.stop()
             except Exception:
                 logger.exception("[%s] proxy shutdown error", agent_type)
+        self._deregister_agent_presence(agent_proc)
         return True
 
     def stop_all(self) -> None:
@@ -562,6 +564,36 @@ class AgentProcessManager:
 
     def _app_url(self, path: str) -> str:
         return f"http://127.0.0.1:{self._app_port}{path}"
+
+    def _resolve_presence_channel(self, agent_proc: AgentProcess) -> str | None:
+        if agent_proc.proxy is not None and agent_proc.proxy._has_joined_channel():
+            return agent_proc.proxy._get_joined_channel()
+        return agent_proc.presence_channel
+
+    def _deregister_agent_presence(self, agent_proc: AgentProcess) -> bool:
+        channel = self._resolve_presence_channel(agent_proc)
+        if not channel:
+            return False
+
+        payload = json.dumps({
+            "channel_id": channel,
+            "agent_type": agent_proc.agent_type,
+        }).encode("utf-8")
+        req = Request(
+            self._app_url("/api/agents/deregister"),
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urlopen(req, timeout=5) as resp:
+                return resp.status == 200
+        except HTTPError as exc:
+            if exc.code != 404:
+                logger.warning("[%s] deregister failed: %s", agent_proc.agent_type, exc)
+        except (URLError, OSError) as exc:
+            logger.warning("[%s] deregister failed: %s", agent_proc.agent_type, exc)
+        return False
 
     def _start_queue_watcher_thread(self, agent_proc: AgentProcess) -> None:
         queue_thread = threading.Thread(
@@ -667,6 +699,7 @@ class AgentProcessManager:
                 text = entry.get("text", "")
                 sender = entry.get("sender", "human")
                 agent_proc.active_channel = str(channel).strip() or "general"
+                agent_proc.presence_channel = agent_proc.active_channel
                 injection = _build_trigger_prompt(
                     agent_type=agent_type,
                     channel=channel,
