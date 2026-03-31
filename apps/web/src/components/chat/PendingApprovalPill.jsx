@@ -8,7 +8,7 @@ export function PendingApprovalPill({ count }) {
 
   return (
     <div className={styles.pill}>
-      <ShieldIcon size={12} color="var(--warning)" />
+      <ShieldIcon size={15} color="var(--warning)" />
       <span className={styles.label}>{count} PENDING</span>
     </div>
   );

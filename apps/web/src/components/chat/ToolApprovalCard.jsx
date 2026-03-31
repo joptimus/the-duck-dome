@@ -19,7 +19,7 @@ const STATE_LABELS = {
   denied: 'DENIED',
 };
 
-function ShieldByState({ status, size = 14, color }) {
+function ShieldByState({ status, size = 16, color }) {
   if (status === 'approved') return <ShieldCheckIcon size={size} color={color} />;
   if (status === 'denied') return <ShieldXIcon size={size} color={color} />;
   return <ShieldIcon size={size} color={color} />;
@@ -69,7 +69,7 @@ export function ToolApprovalCard({ msg, idx = 0, onApprove, onDeny }) {
 
         {/* Header */}
         <div className={styles.header}>
-          <ShieldByState status={msg.status} size={14} color={borderColor} />
+          <ShieldByState status={msg.status} size={16} color={borderColor} />
           <span className={styles.agentName} style={{ color: meta.color }}>
             {meta.label}
           </span>

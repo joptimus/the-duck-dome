@@ -26,10 +26,7 @@ export function ChatTimeline({ messages = [], channelName, onApprove, onDeny }) 
         if (msg.sender_type === 'date_divider') {
           return <DateDivider key={msg.id} label={msg.text} />;
         }
-        if (msg.type === 'system' || msg.sender_type === 'system') {
-          return <SystemMessage key={msg.id} msg={msg} idx={idx} />;
-        }
-        if (msg.sender_type === 'tool_approval') {
+        if (msg.type === 'tool_approval' || msg.sender_type === 'tool_approval') {
           return (
             <ToolApprovalCard
               key={msg.id}
@@ -39,6 +36,9 @@ export function ChatTimeline({ messages = [], channelName, onApprove, onDeny }) 
               onDeny={() => onDeny?.(msg.id)}
             />
           );
+        }
+        if (msg.type === 'system' || msg.sender_type === 'system') {
+          return <SystemMessage key={msg.id} msg={msg} idx={idx} />;
         }
         return <MessageBubble key={msg.id} message={msg} index={idx} />;
       })}

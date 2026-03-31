@@ -160,6 +160,15 @@ export async function getChannelMessages(channelId) {
   return request(`/api/messages?channel=${encodeURIComponent(channelId)}`);
 }
 
+export async function getPendingToolRequests(channelId) {
+  try {
+    return await request(`/api/tool_approvals/pending?channel=${encodeURIComponent(channelId)}`);
+  } catch (error) {
+    if (!error?.isNetworkError) throw error;
+    return [];
+  }
+}
+
 export async function sendChannelMessage({ channelId, text, sender = "human" }) {
   return request("/api/messages", {
     method: "POST",

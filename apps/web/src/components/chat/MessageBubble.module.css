@@ -2,13 +2,8 @@
   display: flex;
   gap: 10px;
   margin-bottom: 18px;
-  transition: margin-bottom 0.12s ease;
   position: relative;
   animation: fadeUp 0.3s ease both;
-}
-
-.row:hover {
-  margin-bottom: 32px;
 }
 
 .rowUser {

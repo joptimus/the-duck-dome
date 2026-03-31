@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { agentMeta } from '../../constants/agents';
 import { MessageToolbar } from './MessageToolbar';
@@ -86,8 +86,8 @@ function remarkMentions() {
 
 export function MessageBubble({ message, index = 0 }) {
   const [hovered, setHovered] = useState(false);
-  const { sender, text, timestamp } = message;
-  const normalizedText = normalizeDisplayText(text || '');
+  const { sender, text, content, timestamp } = message;
+  const normalizedText = normalizeDisplayText(content || text || '');
   const isUser = !AGENT_META[sender?.toLowerCase()];
   const agent = AGENT_META[sender?.toLowerCase()];
 
@@ -127,6 +127,7 @@ export function MessageBubble({ message, index = 0 }) {
         <div className={styles.body}>
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMentions]}
+            urlTransform={(url) => (typeof url === 'string' && url.startsWith('mention:') ? url : defaultUrlTransform(url))}
             components={{
               a: ({ href, children, ...props }) => {
                 if (typeof href === 'string' && href.startsWith('mention:')) {
@@ -171,7 +172,12 @@ export function MessageBubble({ message, index = 0 }) {
           </ReactMarkdown>
         </div>
 
-        {hovered && <MessageToolbar messageId={message.id} />}
+        <MessageToolbar
+          visible={hovered}
+          roleOpen={false}
+          agentColor={agent?.color || 'var(--text-muted)'}
+          messageText={normalizedText}
+        />
       </div>
     </div>
   );
