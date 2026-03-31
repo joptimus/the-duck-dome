@@ -41,7 +41,7 @@ def build_launch_args(
                 cmd.extend(
                     [
                         "-c",
-                        f'mcp_servers.duckdome.tools.{tool_name}.approval_mode="never"',
+                        f'mcp_servers.duckdome.tools.{tool_name}.approval_mode="approve"',
                     ]
                 )
             return LaunchArgs(

@@ -41,7 +41,7 @@ def test_codex_launch_args():
     assert any("http://localhost:8200/mcp" in arg for arg in result.cmd)
     for tool_name in DUCKDOME_STARTUP_SAFE_TOOLS:
         assert (
-            f'mcp_servers.duckdome.tools.{tool_name}.approval_mode="never"'
+            f'mcp_servers.duckdome.tools.{tool_name}.approval_mode="approve"'
             in result.cmd
         )
     # No dangerous permissions flags
