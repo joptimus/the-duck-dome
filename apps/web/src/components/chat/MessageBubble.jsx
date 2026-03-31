@@ -1,7 +1,11 @@
 import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { agentMeta } from '../../constants/agents';
 import { MessageToolbar } from './MessageToolbar';
 import styles from './MessageBubble.module.css';
+
+const MENTION_PATTERN = /(^|[\s(])(@[a-z0-9_-]+)/gi;
 
 const AGENT_META = {
   claude: { color: 'var(--agent-claude)', bg: 'var(--agent-claude-bg)', border: 'var(--agent-claude-border)' },
@@ -26,31 +30,58 @@ function normalizeDisplayText(value) {
     .replaceAll('Â ', ' ');
 }
 
-function renderTextWithMentions(text) {
-  const parts = text.split(/(@\w+)/g);
-  return parts.map((part, i) => {
-    if (!part.startsWith('@')) return part;
-    const key = part.slice(1).toLowerCase();
-    const meta = agentMeta[key];
-    return (
-      <span
-        key={i}
-        className={styles.mention}
-        style={{
-          color: meta?.color || 'var(--blue)',
-          background: meta?.bg || 'rgba(0, 212, 255, 0.1)',
-          borderColor: meta?.border || 'rgba(0, 212, 255, 0.25)',
-        }}
-      >
-        {part}
-      </span>
-    );
-  });
-}
-
 function formatTime(ts) {
   const d = new Date(ts * 1000);
   return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function splitTextIntoMentionNodes(value) {
+  const nodes = [];
+  let lastIndex = 0;
+
+  value.replaceAll(MENTION_PATTERN, (match, prefix, mention, offset) => {
+    if (offset > lastIndex) {
+      nodes.push({ type: 'text', value: value.slice(lastIndex, offset) });
+    }
+    if (prefix) {
+      nodes.push({ type: 'text', value: prefix });
+    }
+    nodes.push({
+      type: 'link',
+      url: `mention:${mention.slice(1).toLowerCase()}`,
+      children: [{ type: 'text', value: mention }],
+    });
+    lastIndex = offset + match.length;
+    return match;
+  });
+
+  if (lastIndex < value.length) {
+    nodes.push({ type: 'text', value: value.slice(lastIndex) });
+  }
+
+  return nodes.length > 0 ? nodes : [{ type: 'text', value }];
+}
+
+function transformMentionNodes(node) {
+  if (!node || typeof node !== 'object') return;
+  if (!Array.isArray(node.children)) return;
+
+  const nextChildren = [];
+  for (const child of node.children) {
+    if (child?.type === 'text' && typeof child.value === 'string' && child.value.includes('@')) {
+      nextChildren.push(...splitTextIntoMentionNodes(child.value));
+      continue;
+    }
+    transformMentionNodes(child);
+    nextChildren.push(child);
+  }
+  node.children = nextChildren;
+}
+
+function remarkMentions() {
+  return (tree) => {
+    transformMentionNodes(tree);
+  };
 }
 
 export function MessageBubble({ message, index = 0 }) {
@@ -94,7 +125,50 @@ export function MessageBubble({ message, index = 0 }) {
           <span className={styles.timestamp}>{formatTime(timestamp)}</span>
         </div>
         <div className={styles.body}>
-          {renderTextWithMentions(normalizedText)}
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm, remarkMentions]}
+            components={{
+              a: ({ href, children, ...props }) => {
+                if (typeof href === 'string' && href.startsWith('mention:')) {
+                  const key = href.slice('mention:'.length).toLowerCase();
+                  const meta = agentMeta[key];
+                  return (
+                    <span
+                      {...props}
+                      className={styles.mention}
+                      style={{
+                        color: meta?.color || 'var(--blue)',
+                        background: meta?.bg || 'rgba(0, 212, 255, 0.1)',
+                        borderColor: meta?.border || 'rgba(0, 212, 255, 0.25)',
+                      }}
+                    >
+                      {children}
+                    </span>
+                  );
+                }
+                return (
+                  <a href={href} {...props} target="_blank" rel="noreferrer" className={styles.link} />
+                );
+              },
+              code: ({ inline, className, children, ...props }) =>
+                inline ? (
+                  <code {...props} className={styles.inlineCode}>
+                    {children}
+                  </code>
+                ) : (
+                  <code {...props} className={`${styles.codeBlock} ${className || ''}`.trim()}>
+                    {children}
+                  </code>
+                ),
+              pre: ({ children }) => <pre className={styles.pre}>{children}</pre>,
+              p: ({ children }) => <p className={styles.paragraph}>{children}</p>,
+              ul: ({ children }) => <ul className={styles.list}>{children}</ul>,
+              ol: ({ children }) => <ol className={styles.list}>{children}</ol>,
+              blockquote: ({ children }) => <blockquote className={styles.blockquote}>{children}</blockquote>,
+            }}
+          >
+            {normalizedText}
+          </ReactMarkdown>
         </div>
 
         {hovered && <MessageToolbar messageId={message.id} />}

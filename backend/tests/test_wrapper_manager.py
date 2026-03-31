@@ -56,11 +56,15 @@ def test_build_trigger_prompt_uses_claude_specific_mcp_wording():
 
 
 class _FakeProxy:
-    def __init__(self, channel: str):
+    def __init__(self, channel: str, has_joined: bool = True):
         self._channel = channel
+        self._has_joined = has_joined
 
     def _get_joined_channel(self) -> str:
         return self._channel
+
+    def _has_joined_channel(self) -> bool:
+        return self._has_joined
 
 
 def test_claude_uses_direct_mcp_like_legacy_wrapper():
@@ -155,3 +159,29 @@ def test_queue_monitor_restarts_dead_queue_watcher(tmp_path):
         original_interval.QUEUE_MONITOR_INTERVAL = old_value
 
     assert calls == ["restart"]
+
+
+def test_deregister_agent_presence_uses_joined_proxy_channel(tmp_path, monkeypatch):
+    manager = AgentProcessManager(data_dir=tmp_path, app_port=8123)
+    captured = {}
+
+    class _FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    def _fake_urlopen(request, timeout=5):
+        captured["url"] = request.full_url
+        captured["body"] = request.data
+        return _FakeResponse()
+
+    monkeypatch.setattr("duckdome.wrapper.manager.urlopen", _fake_urlopen)
+
+    agent = AgentProcess(agent_type="codex", proxy=_FakeProxy("general", has_joined=True))
+    assert manager._deregister_agent_presence(agent) is True
+    assert captured["url"] == "http://127.0.0.1:8123/api/agents/deregister"
+    assert captured["body"] == b'{"channel_id": "general", "agent_type": "codex"}'

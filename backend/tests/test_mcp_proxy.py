@@ -185,6 +185,7 @@ def test_chat_join_sets_channel_context():
     }).encode()
     proxy._extract_tool_calls(payload)
     assert proxy._get_joined_channel() == "channel-123"
+    assert proxy._has_joined_channel() is True
 
 
 def test_extract_tool_calls_falls_back_to_joined_channel():

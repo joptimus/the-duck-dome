@@ -139,6 +139,8 @@ class MessageService:
         channel: str,
         sender: str,
         type: MessageType | None = None,
+        subtype: str | None = None,
+        agent: str | None = None,
     ) -> Message:
         if self._channel_service and not self._channel_service.validate_channel(channel):
             raise ValueError(f"Invalid channel: {channel}")
@@ -164,6 +166,7 @@ class MessageService:
                     channel=channel,
                     sender="system",
                     type=MessageType.SYSTEM,
+                    subtype="error",
                 )
                 self._store.add(guard_msg)
                 self._broadcast(
@@ -176,6 +179,8 @@ class MessageService:
                 channel=channel,
                 sender=sender,
                 type=type or MessageType.CHAT,
+                subtype=subtype,
+                agent=agent,
             )
             self._store.add(msg)
             self._broadcast({"type": "new_message", "message": msg.model_dump()})
@@ -200,6 +205,8 @@ class MessageService:
             channel=channel,
             sender=sender,
             type=type or MessageType.CHAT,
+            subtype=subtype,
+            agent=agent,
             delivery=delivery,
             deliveries=deliveries,
         )
@@ -223,6 +230,29 @@ class MessageService:
                 except ValueError:
                     # Trigger creation is best-effort; message delivery still succeeds.
                     continue
+        return msg
+
+    def post_system_event(
+        self,
+        *,
+        channel: str,
+        subtype: str,
+        agent: str | None,
+        text: str,
+    ) -> Message:
+        if self._channel_service and not self._channel_service.validate_channel(channel):
+            raise ValueError(f"Invalid channel: {channel}")
+
+        msg = Message(
+            text=text,
+            channel=channel,
+            sender="system",
+            type=MessageType.SYSTEM,
+            subtype=subtype,
+            agent=agent,
+        )
+        self._store.add(msg)
+        self._broadcast({"type": "new_message", "message": msg.model_dump()})
         return msg
 
     def _get_delivery_for_agent(

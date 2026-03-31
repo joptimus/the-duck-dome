@@ -108,6 +108,7 @@ function normalizeTriggers(data, channelId) {
 function normalizeMessages(data, channelId) {
   if (!Array.isArray(data)) return [];
   return data.map((message, index) => {
+    const messageType = String(message.type || "").toLowerCase();
     const senderRaw = String(message.sender || "system");
     const senderLower = senderRaw.toLowerCase();
     const isAssistant = senderLower === "claude" || senderLower === "codex" || senderLower === "gemini";
@@ -121,8 +122,21 @@ function normalizeMessages(data, channelId) {
     return {
       id: message.id || `${channelId || "channel"}-msg-${index}`,
       sender,
-      sender_type: isAssistant ? "assistant" : senderLower === "system" ? "system" : "user",
+      sender_type:
+        message.sender_type ||
+        (messageType === "system"
+          ? "system"
+          : isAssistant
+            ? "assistant"
+            : senderLower === "system"
+              ? "system"
+              : "user"),
+      type: messageType || undefined,
+      subtype: message.subtype || undefined,
+      agent: message.agent || undefined,
       text: message.text || "",
+      content: message.content || message.text || "",
+      channel: message.channel || message.channel_id || channelId || "",
       time: formatClockTime(message.timestamp ?? message.time),
       timestamp: message.timestamp ?? message.time,
     };
