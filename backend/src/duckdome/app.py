@@ -17,6 +17,8 @@ from duckdome.routes import jobs as jobs_mod
 from duckdome.routes import rules as rules_mod
 from duckdome.routes import repos as repos_mod
 from duckdome.routes import websocket as websocket_mod
+from duckdome.routes import wrapper as wrapper_mod
+from duckdome.services.wrapper_service import WrapperService
 from duckdome.services.channel_service import ChannelService
 from duckdome.services.job_service import JobService
 from duckdome.services.repo_service import RepoService
@@ -110,12 +112,15 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         message_store=message_store,
     )
 
+    wrapper_service = WrapperService(data_dir=data_dir)
+
     # Init routes with dependencies
     messages_mod.init(message_service)
     deliveries_mod.init(message_service)
     channels_mod.init(channel_service)
     triggers_mod.init(trigger_service)
     runners_mod.init(runner_service)
+    wrapper_mod.init(wrapper_service)
     tool_approvals_mod.init(tool_approval_service)
     rules_mod.init(rule_service)
     jobs_mod.init(job_service)
@@ -126,6 +131,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     app.state.message_service = message_service
     app.state.rule_service = rule_service
     app.state.trigger_service = trigger_service
+    app.state.wrapper_service = wrapper_service
 
     # Register routers
     app.include_router(health_router)
@@ -134,6 +140,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     app.include_router(channels_mod.router)
     app.include_router(triggers_mod.router)
     app.include_router(runners_mod.router)
+    app.include_router(wrapper_mod.router)
     app.include_router(tool_approvals_mod.router)
     app.include_router(rules_mod.router)
     app.include_router(jobs_mod.router)

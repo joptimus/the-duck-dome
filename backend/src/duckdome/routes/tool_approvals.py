@@ -79,6 +79,15 @@ def clear_policies(body: ClearPoliciesBody):
     return {"removed": removed}
 
 
+@router.get("/{approval_id}")
+def get_approval(approval_id: str):
+    svc = _get_service()
+    approval = svc.get(approval_id)
+    if approval is None:
+        raise HTTPException(status_code=404, detail="Approval not found")
+    return approval.model_dump(mode="json")
+
+
 @router.post("/{approval_id}/approve")
 def approve(approval_id: str, body: ResolveApprovalBody):
     svc = _get_service()

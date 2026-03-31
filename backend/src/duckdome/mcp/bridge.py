@@ -1,9 +1,10 @@
-"""MCP bridge — exposes chat_join/chat_send/chat_read tools for agent connectivity.
+"""MCP bridge — exposes chat tools for agent connectivity.
 
 This feature replaces legacy MCP identity+chat behavior from
 ``agentchattr/apps/server/src/mcp_bridge.py``.
 Differences from legacy behavior:
-  - Session identity is established by ``chat_join`` (no ``chat_claim`` reclaim flow).
+  - Session identity is established by ``chat_join`` with a lightweight
+    ``chat_claim`` compatibility alias for Claude-style workflows.
   - No job-scoped reads/sends (jobs are separate).
   - No image attachments, choices, or reply_to.
   - Cursor store is in-memory only (no persistence to disk yet).
@@ -21,6 +22,16 @@ from duckdome.mcp.identity import SessionIdentityStore
 from duckdome.services.message_service import MessageService
 from duckdome.services.rule_service import RuleService
 from duckdome.services.trigger_service import TriggerService
+
+_MCP_INSTRUCTIONS = (
+    "duckdome — a shared chat channel for coordinating development between AI agents and humans. "
+    "Use chat_send to post messages. Use chat_read to check recent messages. "
+    "Use chat_join when you start a session to announce your presence. "
+    "When you are addressed in chat, do the work first and then reply in chat. "
+    "Messages belong to channels. Read and reply in the same channel. "
+    "Claude compatibility: prompts may say 'mcp read #channel - you were mentioned, take appropriate action'. "
+    "Interpret that as: use DuckDome chat tools to read the channel, perform the task, and respond in chat."
+)
 
 
 class McpBridge:
@@ -40,7 +51,7 @@ class McpBridge:
         self._rule_service = rule_service
         self._cursor_store = CursorStore()
         self._identity_store = SessionIdentityStore()
-        self._mcp = FastMCP("duckdome")
+        self._mcp = FastMCP("duckdome", instructions=_MCP_INSTRUCTIONS)
         self._register_tools()
 
     @property
@@ -54,15 +65,56 @@ class McpBridge:
                 return None, "Error: Agent not registered. Call chat_join first."
             return identity.agent_type, identity.channel
 
-        @self._mcp.tool()
-        def chat_join(channel: str, agent_type: str, ctx: Any | None = None) -> str:
-            """Register this MCP session as an agent in a channel."""
+        def _resolve_join_identity(
+            *,
+            channel: str,
+            agent_type: str,
+            name: str,
+        ) -> tuple[str | None, str | None]:
             ch = channel.strip()
-            agent = agent_type.strip().lower()
+            agent = (agent_type.strip() or name.strip()).lower()
             if not ch:
-                return "Error: channel is required."
+                return None, "Error: channel is required."
             if not agent:
-                return "Error: agent_type is required."
+                return None, "Error: agent_type is required."
+            return agent, None
+
+        def _ensure_identity(
+            *,
+            ctx: Any | None,
+            channel: str,
+            sender: str = "",
+        ) -> tuple[str | None, str | None]:
+            identity = self._identity_store.get(ctx)
+            if identity is not None:
+                effective_channel = channel.strip() if channel.strip() else identity.channel
+                return identity.agent_type, effective_channel
+            sender_name = sender.strip().lower()
+            if not sender_name:
+                return None, "Error: Agent not registered. Call chat_join first."
+            effective_channel = channel.strip() if channel.strip() else "general"
+            self._identity_store.set(ctx, channel=effective_channel, agent_type=sender_name)
+            try:
+                self._trigger_service.register_agent(channel_id=effective_channel, agent_type=sender_name)
+            except (ValueError, Exception):
+                pass  # best-effort — don't block the tool call
+            return sender_name, effective_channel
+
+        @self._mcp.tool()
+        def chat_join(
+            channel: str = "general",
+            agent_type: str = "",
+            name: str = "",
+            ctx: Any | None = None,
+        ) -> str:
+            """Register this MCP session as an agent in a channel.
+
+            Supports DuckDome style ``agent_type`` and legacy Claude style ``name``.
+            """
+            agent, err = _resolve_join_identity(channel=channel, agent_type=agent_type, name=name)
+            if err:
+                return err
+            ch = channel.strip()
 
             try:
                 self._trigger_service.register_agent(channel_id=ch, agent_type=agent)
@@ -72,23 +124,31 @@ class McpBridge:
             return f"Joined channel '{ch}' as '{agent}'."
 
         @self._mcp.tool()
-        def chat_send(text: str, channel: str = "", ctx: Any | None = None) -> str:
+        def chat_send(
+            text: str = "",
+            message: str = "",
+            channel: str = "",
+            sender: str = "",
+            ctx: Any | None = None,
+        ) -> str:
             """Send a message to a channel.
 
             Args:
                 text: The message text to send.
+                message: Legacy alias for text.
                 channel: Optional channel override (defaults to channel from chat_join).
+                sender: Legacy compatibility field for Claude/agentchattr workflows.
             """
-            agent_name, joined_channel = _identity_or_error(ctx)
+            agent_name, effective_channel = _ensure_identity(ctx=ctx, channel=channel, sender=sender)
             if agent_name is None:
-                return joined_channel
+                return effective_channel
 
-            if not text.strip():
+            body = text.strip() or message.strip()
+            if not body:
                 return "Error: empty message, not sent."
-            effective_channel = channel.strip() if channel.strip() else joined_channel
 
             msg = self._message_service.send(
-                text=text.strip(),
+                text=body,
                 channel=effective_channel,
                 sender=agent_name,
             )
@@ -98,6 +158,7 @@ class McpBridge:
         def chat_read(
             channel: str = "",
             limit: int = 20,
+            sender: str = "",
             ctx: Any | None = None,
         ) -> str:
             """Read recent messages from a channel. Returns messages since last read cursor.
@@ -105,14 +166,15 @@ class McpBridge:
             Args:
                 channel: Optional channel override (defaults to channel from chat_join).
                 limit: Maximum number of messages to return (default 20, max 100).
+                sender: Legacy compatibility field for Claude/agentchattr workflows.
             """
-            agent_name, joined_channel = _identity_or_error(ctx)
+            agent_name, joined_channel = _ensure_identity(ctx=ctx, channel=channel, sender=sender)
             if agent_name is None:
                 return joined_channel
 
             limit = max(1, min(limit, 100))
             agent = agent_name
-            ch = channel.strip() if channel.strip() else joined_channel
+            ch = joined_channel
 
             cursor = self._cursor_store.get_cursor(agent, ch)
             messages = self._message_service.list_messages(ch, after_id=cursor)
@@ -140,6 +202,39 @@ class McpBridge:
                 })
 
             return json.dumps(result, ensure_ascii=False)
+
+        @self._mcp.tool()
+        def chat_claim(sender: str, name: str = "", ctx: Any | None = None) -> str:
+            """Legacy compatibility alias used by agentchattr-style Claude sessions."""
+            chosen = (name.strip() or sender.strip()).lower()
+            if not chosen:
+                return "Error: sender is required."
+            identity = self._identity_store.get(ctx)
+            channel = identity.channel if identity is not None else "general"
+            self._identity_store.set(ctx, channel=channel, agent_type=chosen)
+            try:
+                self._trigger_service.register_agent(channel_id=channel, agent_type=chosen)
+            except (ValueError, Exception):
+                pass  # best-effort
+            return json.dumps({"confirmed_name": chosen}, ensure_ascii=False)
+
+        @self._mcp.tool()
+        def chat_who() -> str:
+            """List currently known agent types from channel membership."""
+            agents = sorted(
+                {
+                    agent.agent_type
+                    for channel in self._trigger_service._channels.list_channels()
+                    for agent in self._trigger_service._channels.list_agents(channel.id)
+                }
+            )
+            return f"Online: {', '.join(agents)}" if agents else "Nobody online."
+
+        @self._mcp.tool()
+        def chat_channels() -> str:
+            """List available channels."""
+            channels = self._trigger_service._channels.list_channels()
+            return json.dumps([channel.id for channel in channels], ensure_ascii=False)
 
         @self._mcp.tool()
         def chat_rules() -> str:

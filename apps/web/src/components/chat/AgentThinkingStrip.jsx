@@ -16,15 +16,16 @@ export function AgentThinkingStrip({ agents = [], failure }) {
         return (
           <span key={agent.id} className={styles.item}>
             <Dot color={meta.color || 'var(--text-muted)'} size={6} pulse />
-            <span className={styles.label} style={{ color: meta.color }}>
-              {meta.label || agent.agent_type} is working...
+            <span className={styles.label}>
+              <span style={{ color: meta.color }}>{meta.label || agent.agent_type}</span>
+              {' '}is working…
             </span>
           </span>
         );
       })}
       {failure && (
         <span className={styles.error}>
-          Claude failed: {failure}
+          {(agentMeta[failure.agent]?.label || failure.agent)} failed: {failure.summary}
         </span>
       )}
     </div>

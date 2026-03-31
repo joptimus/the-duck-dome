@@ -108,6 +108,40 @@ def test_approve_with_remember_sets_policy(client: TestClient):
     assert second.json() == {"status": "approved", "source": "policy"}
 
 
+def test_get_single_approval(client: TestClient):
+    resp = client.post(
+        "/api/tool_approvals/request",
+        json={
+            "agent": "claude",
+            "tool": "bash",
+            "arguments": {"cmd": "pwd"},
+            "channel": "general",
+        },
+    )
+    assert resp.status_code == 201
+    approval_id = resp.json()["approval_id"]
+
+    # GET by ID returns the approval
+    get_resp = client.get(f"/api/tool_approvals/{approval_id}")
+    assert get_resp.status_code == 200
+    assert get_resp.json()["id"] == approval_id
+    assert get_resp.json()["status"] == "pending"
+
+    # Approve it, then GET should show approved
+    client.post(
+        f"/api/tool_approvals/{approval_id}/approve",
+        json={"resolved_by": "human"},
+    )
+    get_resp2 = client.get(f"/api/tool_approvals/{approval_id}")
+    assert get_resp2.status_code == 200
+    assert get_resp2.json()["status"] == "approved"
+
+
+def test_get_nonexistent_approval(client: TestClient):
+    resp = client.get("/api/tool_approvals/nonexistent-id")
+    assert resp.status_code == 404
+
+
 def test_list_and_clear_policies(client: TestClient):
     first = client.post(
         "/api/tool_approvals/request",

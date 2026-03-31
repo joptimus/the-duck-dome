@@ -3,7 +3,7 @@ import {
   addChannelAgent,
   createChannel,
   deregisterRuntimeAgent,
-  executeRunner,
+  triggerAgent,
   getChannel,
   getChannelAgents,
   getChannelMessages,
@@ -15,6 +15,8 @@ import {
   getRepos,
   addRepoSource,
   removeRepoSource,
+  approveToolRequest,
+  denyToolRequest,
 } from "./api";
 import { createWsClient } from "../../api/ws";
 import { mockMessagesByChannelId } from "./mockData";
@@ -391,6 +393,38 @@ export default function ChannelShell() {
           prev.map((a) => (a.id === event.agent_id ? { ...a, status: event.status } : a)),
         );
       }
+
+      if (event.type === "tool_approval_updated" && event.approval) {
+        const approval = event.approval;
+        const approvalChannel = approval.channel;
+        const approvalMsg = {
+          id: approval.id,
+          sender: approval.agent,
+          sender_type: "tool_approval",
+          status: approval.status,
+          agent: approval.agent,
+          tool: approval.tool,
+          command: JSON.stringify(approval.arguments),
+          reason: `${approval.agent} wants to use ${approval.tool}`,
+          time: new Date((approval.created_at || 0) * 1000).toLocaleTimeString(),
+          resolvedAt: approval.resolved_at
+            ? new Date(approval.resolved_at * 1000).toLocaleTimeString()
+            : null,
+          channel: approvalChannel,
+        };
+        setMessagesByChannelId((prev) => {
+          const existing = prev[approvalChannel] || [];
+          const idx = existing.findIndex((m) => m.id === approval.id);
+          if (idx >= 0) {
+            // Update existing approval message
+            const updated = [...existing];
+            updated[idx] = approvalMsg;
+            return { ...prev, [approvalChannel]: updated };
+          }
+          // Add new approval message
+          return { ...prev, [approvalChannel]: [...existing, approvalMsg] };
+        });
+      }
     }
 
     const client = createWsClient(WS_URL, handleWsEvent, setWsConnected);
@@ -414,20 +448,19 @@ export default function ChannelShell() {
     return map;
   }, [mergedAgents]);
   const hasRuntimeData = mergedAgents.length > 0 || triggers.length > 0;
-  const claudeRuntime = runtimeAgentMap.claude || null;
-  const isClaudeWorking = claudeRuntime?.status === "working";
-  const latestClaudeFailure = useMemo(() => {
-    const claudeTriggers = triggers
-      .filter((trigger) => trigger.target === "claude")
+  const latestAgentFailure = useMemo(() => {
+    const failedTriggers = triggers
+      .filter((trigger) => trigger.state === "failed" && trigger.last_error)
       .sort((a, b) => Number(b.completed_at || b.created_at || 0) - Number(a.completed_at || a.created_at || 0));
-    if (claudeTriggers.length === 0) return null;
-    const latest = claudeTriggers[0];
-    if (latest.state !== "failed" || !latest.last_error) return null;
+    if (failedTriggers.length === 0) return null;
+    const latest = failedTriggers[0];
+    const agent = latest.target || "agent";
     const text = String(latest.last_error || "")
       .replace(/traceback[\s\S]*/i, "")
       .split("\n")[0]
       .trim();
-    return text ? text.slice(0, 180) : "Runner error";
+    const summary = text ? text.slice(0, 180) : "Runner error";
+    return { agent, summary };
   }, [triggers]);
 
   // Derive channel agents list for TopBar (agent_type + running status)
@@ -447,6 +480,22 @@ export default function ChannelShell() {
     () => activeMessages.filter((m) => m.sender_type === "tool_approval" && m.status === "pending").length,
     [activeMessages],
   );
+
+  const handleApproveToolRequest = useCallback(async (approvalId) => {
+    try {
+      await approveToolRequest(approvalId);
+    } catch (err) {
+      console.error("Failed to approve tool request:", err);
+    }
+  }, []);
+
+  const handleDenyToolRequest = useCallback(async (approvalId) => {
+    try {
+      await denyToolRequest(approvalId);
+    } catch (err) {
+      console.error("Failed to deny tool request:", err);
+    }
+  }, []);
 
   const onCreate = async (payload) => {
     const created = await createChannel(payload);
@@ -593,9 +642,13 @@ export default function ChannelShell() {
         if (targets.length === 0) {
           return;
         }
-        await Promise.allSettled(
-          targets.map((agentType) => executeRunner(activeChannelId, agentType)),
+        const triggerResults = await Promise.allSettled(
+          targets.map((agentType) => triggerAgent(agentType, "user", text, activeChannelId)),
         );
+        const anyFailed = triggerResults.some((r) => r.status === "rejected");
+        if (anyFailed) {
+          setMessagesError("One or more agents are not running");
+        }
       })
       .catch((error) => {
         console.error("Failed to send message:", error);
@@ -696,11 +749,13 @@ export default function ChannelShell() {
         <ChatTimeline
           messages={activeMessages}
           channelName={showChannel?.name}
+          onApprove={handleApproveToolRequest}
+          onDeny={handleDenyToolRequest}
         />
 
         <AgentThinkingStrip
           agents={mergedAgents}
-          failure={latestClaudeFailure}
+          failure={latestAgentFailure}
         />
 
         <Composer

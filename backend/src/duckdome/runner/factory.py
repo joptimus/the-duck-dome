@@ -1,3 +1,5 @@
+# DEPRECATED: This module uses one-shot subprocess.run and will be removed.
+# See duckdome.wrapper for the persistent process replacement.
 from __future__ import annotations
 
 from duckdome.runner.base import BaseExecutor

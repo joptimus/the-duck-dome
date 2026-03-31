@@ -172,14 +172,32 @@ export async function sendChannelMessage({ channelId, text, sender = "human" }) 
   });
 }
 
-export async function executeRunner(channelId, agentType) {
-  return request("/api/runners/execute", {
+export async function triggerAgent(agentType, sender, text, channelId) {
+  return request("/api/wrapper/trigger", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      channel_id: channelId,
       agent_type: agentType,
+      sender,
+      text,
+      channel: channelId,
     }),
+  });
+}
+
+export async function approveToolRequest(approvalId, { remember = false } = {}) {
+  return request(`/api/tool_approvals/${encodeURIComponent(approvalId)}/approve`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resolved_by: "human", remember }),
+  });
+}
+
+export async function denyToolRequest(approvalId, { remember = false } = {}) {
+  return request(`/api/tool_approvals/${encodeURIComponent(approvalId)}/deny`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ resolved_by: "human", remember }),
   });
 }
 

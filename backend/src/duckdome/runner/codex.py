@@ -1,3 +1,5 @@
+# DEPRECATED: This module uses one-shot subprocess.run and will be removed.
+# See duckdome.wrapper for the persistent process replacement.
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,6 +20,16 @@ class CodexExecutor(BaseExecutor):
             if p.is_dir():
                 cwd = str(p)
 
-        cmd = ["codex", "--quiet", prompt]
+        cmd = [
+            "codex",
+            "exec",
+            "--ephemeral",
+            prompt,
+        ]
 
         return _run_cli(cmd, cwd, timeout_s, "codex")
+
+
+# Backward-compatible module-level function
+def execute(ctx: RunContext, timeout_s: int = 120) -> RunResult:
+    return CodexExecutor().execute(ctx, timeout_s)
