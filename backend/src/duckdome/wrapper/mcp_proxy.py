@@ -25,12 +25,16 @@ from urllib.request import Request, urlopen
 
 logger = logging.getLogger(__name__)
 
-# MCP tools and which parameter carries the agent identity.
-# None means the tool has no sender parameter to inject.
-_SENDER_PARAMS: dict[str, str | None] = {
+# MCP tools and which parameter should be forced by the proxy.
+# Most DuckDome chat tools use session identity from chat_join and do not take
+# an explicit sender/name argument anymore.
+_TOOL_IDENTITY_PARAMS: dict[str, str | None] = {
     "chat_send": "sender",
     "chat_read": "sender",
-    "chat_join": "name",
+    "chat_join": "agent_type",
+    "chat_claim": "sender",
+    "chat_who": None,
+    "chat_channels": None,
     "chat_rules": None,
 }
 
@@ -94,6 +98,8 @@ class McpProxy:
         self._auto_approve = auto_approve
         self._server: _ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
+        self._joined_channel = "general"
+        self._state_lock = threading.Lock()
 
     @property
     def port(self) -> int:
@@ -113,6 +119,86 @@ class McpProxy:
 
     def _app_url(self, path: str) -> str:
         return f"http://127.0.0.1:{self._app_port}{path}"
+
+    def _set_joined_channel(self, channel: str) -> None:
+        normalized = str(channel).strip() or "general"
+        with self._state_lock:
+            self._joined_channel = normalized
+
+    def _get_joined_channel(self) -> str:
+        with self._state_lock:
+            return self._joined_channel
+
+    def _remember_channel_from_tool_args(self, tool_name: str, args: dict) -> None:
+        if tool_name != "chat_join" or not isinstance(args, dict):
+            return
+        channel = str(args.get("channel", "")).strip()
+        if channel:
+            self._set_joined_channel(channel)
+
+    def _rewrite_tool_arguments(self, raw: bytes) -> bytes:
+        """Normalize tool arguments to the DuckDome MCP bridge contract."""
+        if not raw:
+            return raw
+        try:
+            data = json.loads(raw)
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return raw
+
+        messages = data if isinstance(data, list) else [data]
+        modified = False
+
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("method") != "tools/call":
+                continue
+
+            params = msg.get("params", {})
+            tool_name = str(params.get("name", "")).strip()
+            args = params.get("arguments", {})
+            if not isinstance(args, dict):
+                args = {}
+
+            identity_key = _TOOL_IDENTITY_PARAMS.get(tool_name)
+            if identity_key is not None and args.get(identity_key) != self._agent_name:
+                args[identity_key] = self._agent_name
+                params["arguments"] = args
+                modified = True
+
+            self._remember_channel_from_tool_args(tool_name, args)
+
+        if modified:
+            return json.dumps(data).encode("utf-8")
+        return raw
+
+    def _extract_tool_calls(self, raw: bytes) -> list[dict]:
+        """Extract tool calls and attach the best-known channel context."""
+        if not raw:
+            return []
+        try:
+            data = json.loads(raw)
+        except Exception:
+            return []
+        messages = data if isinstance(data, list) else [data]
+        result = []
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            if msg.get("method") != "tools/call":
+                continue
+            params = msg.get("params", {}) or {}
+            args = params.get("arguments", {}) or {}
+            tool_name = str(params.get("name", "")).strip()
+            self._remember_channel_from_tool_args(tool_name, args)
+            channel = str(args.get("channel", "")).strip() or self._get_joined_channel()
+            result.append({
+                "id": msg.get("id"),
+                "name": tool_name,
+                "args": args if isinstance(args, dict) else {},
+                "channel": channel,
+            })
+        return result
 
     def _requires_approval(self, tool_name: str, args: dict) -> bool:
         if self._auto_approve:
@@ -206,7 +292,7 @@ class McpProxy:
 
                 # Check if any tool call in the request needs approval.
                 # _extract_tool_calls returns all tools/call entries in the batch.
-                all_tool_calls = self._extract_tool_calls(body)
+                all_tool_calls = proxy._extract_tool_calls(body)
                 calls_needing_approval = [
                     tc for tc in all_tool_calls
                     if proxy._requires_approval(tc["name"], tc["args"])
@@ -317,65 +403,8 @@ class McpProxy:
                     return line
 
             def _maybe_inject_sender(self, raw: bytes) -> bytes:
-                """Inject agent identity into tools/call sender param."""
-                if not raw:
-                    return raw
-                try:
-                    data = json.loads(raw)
-                except (json.JSONDecodeError, UnicodeDecodeError):
-                    return raw
-
-                messages = data if isinstance(data, list) else [data]
-                modified = False
-
-                for msg in messages:
-                    if not isinstance(msg, dict):
-                        continue
-                    if msg.get("method") != "tools/call":
-                        continue
-
-                    params = msg.get("params", {})
-                    tool_name = params.get("name", "")
-                    args = params.get("arguments", {})
-
-                    sender_key = _SENDER_PARAMS.get(tool_name)
-                    if sender_key is None:
-                        continue
-
-                    if args.get(sender_key) != proxy._agent_name:
-                        args[sender_key] = proxy._agent_name
-                        params["arguments"] = args
-                        modified = True
-
-                if modified:
-                    return json.dumps(data).encode("utf-8")
-                return raw
-
-            def _extract_tool_calls(self, raw: bytes) -> list[dict]:
-                """Extract all tool call entries from a JSON-RPC request (handles batches)."""
-                if not raw:
-                    return []
-                try:
-                    data = json.loads(raw)
-                except Exception:
-                    return []
-                messages = data if isinstance(data, list) else [data]
-                result = []
-                for msg in messages:
-                    if not isinstance(msg, dict):
-                        continue
-                    if msg.get("method") != "tools/call":
-                        continue
-                    params = msg.get("params", {}) or {}
-                    args = params.get("arguments", {}) or {}
-                    channel = str(args.get("channel", "general")).strip() or "general"
-                    result.append({
-                        "id": msg.get("id"),
-                        "name": str(params.get("name", "")).strip(),
-                        "args": args if isinstance(args, dict) else {},
-                        "channel": channel,
-                    })
-                return result
+                """Normalize tool calls before forwarding to the upstream MCP app."""
+                return proxy._rewrite_tool_arguments(raw)
 
             def _send_jsonrpc_denied(self, req_id, reason: str):
                 """Send a JSON-RPC error response for denied tool calls."""

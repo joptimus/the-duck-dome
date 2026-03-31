@@ -7,6 +7,7 @@ Each agent gets:
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shlex
@@ -17,6 +18,8 @@ import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 from duckdome.wrapper.injector import inject
 from duckdome.wrapper.mcp_config import generate_agent_token, generate_gemini_settings, generate_mcp_config
@@ -25,6 +28,33 @@ from duckdome.wrapper.providers import build_launch_args
 from duckdome.wrapper.queue import read_queue_entries
 
 logger = logging.getLogger(__name__)
+
+
+def _resolve_launch_cwd(cwd: str | None) -> str:
+    """Resolve the working directory for interactive agent CLIs.
+
+    This feature replaces the legacy wrapper default of launching from the
+    project directory instead of the user's home directory.
+
+    Differences from legacy behavior:
+    - Uses the current process working directory when no explicit cwd is passed.
+    - Keeps explicit cwd overrides unchanged.
+    """
+    base = Path(cwd).resolve() if cwd else Path.cwd().resolve()
+    return str(base)
+
+
+def _should_use_proxy(agent_type: str) -> bool:
+    """Decide whether an agent should connect through the local MCP proxy.
+
+    This feature replaces the legacy provider split from
+    ``agentchattr/apps/server/src/wrapper.py``.
+
+    Differences from legacy behavior:
+    - Claude uses direct HTTP MCP config with bearer headers.
+    - Codex and Gemini still use DuckDome's local proxy path.
+    """
+    return agent_type != "claude"
 
 
 def _resolve_cmd_shim(cmd: list[str]) -> list[str]:
@@ -113,7 +143,63 @@ def _resolve_cmd_shim(cmd: list[str]) -> list[str]:
     return cmd
 
 QUEUE_POLL_INTERVAL = 2.0  # seconds
+QUEUE_MONITOR_INTERVAL = 5.0  # seconds
+HEARTBEAT_INTERVAL = 5.0  # seconds
 INJECT_DELAY = 0.01  # seconds between keystrokes
+
+
+def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: str) -> str:
+    """Build the injected task prompt for an agent queue entry.
+
+    This feature replaces the legacy wrapper prompt in
+    ``agentchattr/apps/server/src/wrapper.py``.
+
+    Differences from legacy behavior:
+    - DuckDome avoids the literal ``mcp read`` phrasing for Claude because newer
+      Claude Code interprets it as a generic MCP resource read, not the legacy
+      chat action.
+    - Includes the triggering sender/text explicitly so the agent does not have to
+      infer the task only from recent chat history.
+    - Tells the agent to do the requested work before posting a reply.
+    """
+    normalized_channel = str(channel).strip() or "general"
+    normalized_sender = str(sender).strip() or "human"
+    normalized_text = str(text).strip()
+
+    if agent_type == "claude":
+        prompt = (
+            "DuckDome MCP is already configured in this session under the server name "
+            '"duckdome". Use the DuckDome MCP chat tools for this task. '
+            f'Join channel "{normalized_channel}", read the latest messages there, '
+            "take appropriate action, and reply in that same DuckDome channel. "
+            "Do not treat this as a generic MCP resource lookup. "
+            "Do not inspect ~/.claude settings, .mcp.json files, or other local config files. "
+            "Do not use curl or direct HTTP calls for DuckDome chat if the DuckDome MCP server is available. "
+        )
+        if normalized_text:
+            prompt += f"Request: {normalized_text} "
+        else:
+            prompt += "Request text was not included. "
+        prompt += f"You were triggered by {normalized_sender}. Reply in chat when done."
+        return prompt
+
+    prompt = (
+        f'Use the chat_join tool with channel="{normalized_channel}" and agent_type="{agent_type}", '
+        "then use chat_read to get the latest messages in context. "
+        f'You were triggered by {normalized_sender}. '
+    )
+
+    if normalized_text:
+        prompt += f"Requested work: {normalized_text}\n\n"
+    else:
+        prompt += "Requested work was not included in the queue entry.\n\n"
+
+    prompt += (
+        "Complete the requested work before replying. "
+        "If the task requires tools, use them. "
+        "When you have a substantive update or result, send it with chat_send."
+    )
+    return prompt
 
 
 def _open_agent_terminal(tmux_session: str) -> None:
@@ -144,7 +230,10 @@ class AgentProcess:
     pid: int | None = None
     tmux_session: str | None = None
     proxy: McpProxy | None = None
+    active_channel: str = "general"
     queue_thread: threading.Thread | None = None
+    queue_monitor_thread: threading.Thread | None = None
+    heartbeat_thread: threading.Thread | None = None
     stop_event: threading.Event = field(default_factory=threading.Event)
     ready_event: threading.Event = field(default_factory=threading.Event)
     started_at: float | None = None
@@ -188,19 +277,24 @@ class AgentProcessManager:
                 return False
             self._starting.add(agent_type)
 
-        # Start MCP proxy for this agent (gates tool calls through approval)
-        proxy = McpProxy(
-            upstream_url=self._mcp_url,
-            agent_name=agent_type,
-            app_port=self._app_port,
-        )
-        if not proxy.start():
-            logger.error("[%s] failed to start MCP proxy", agent_type)
-            with self._lock:
-                self._starting.discard(agent_type)
-            return False
-        proxy_mcp_url = proxy.mcp_url
-        logger.info("[%s] MCP proxy at %s", agent_type, proxy_mcp_url)
+        proxy: McpProxy | None = None
+        mcp_target_url = self._mcp_url
+        if _should_use_proxy(agent_type):
+            # Start MCP proxy for this agent (gates tool calls through approval).
+            proxy = McpProxy(
+                upstream_url=self._mcp_url,
+                agent_name=agent_type,
+                app_port=self._app_port,
+            )
+            if not proxy.start():
+                logger.error("[%s] failed to start MCP proxy", agent_type)
+                with self._lock:
+                    self._starting.discard(agent_type)
+                return False
+            mcp_target_url = proxy.mcp_url
+            logger.info("[%s] MCP proxy at %s", agent_type, mcp_target_url)
+        else:
+            logger.info("[%s] using direct MCP at %s", agent_type, mcp_target_url)
 
         # Generate MCP config pointing to the proxy (not the real MCP server).
         # Including a static Bearer token suppresses Claude Code's OAuth
@@ -209,16 +303,16 @@ class AgentProcessManager:
         token = generate_agent_token()
         if agent_type == "gemini":
             mcp_config_path = generate_gemini_settings(
-                self._config_dir, agent_type, proxy_mcp_url, token
+                self._config_dir, agent_type, mcp_target_url, token
             )
         else:
             mcp_config_path = generate_mcp_config(
-                self._config_dir, agent_type, proxy_mcp_url, token
+                self._config_dir, agent_type, mcp_target_url, token
             )
 
         # Build CLI args
         launch = build_launch_args(
-            agent_type, mcp_config_path, cwd, mcp_url=proxy_mcp_url
+            agent_type, mcp_config_path, cwd, mcp_url=mcp_target_url
         )
 
         # Resolve .cmd shims to the underlying node command on Windows.
@@ -240,11 +334,12 @@ class AgentProcessManager:
 
         def _run_one_popen_iteration() -> bool:
             """Run one lifecycle via Popen (Windows). Returns False to stop retrying."""
+            launch_cwd = _resolve_launch_cwd(cwd)
             logger.info("[%s] starting process: %s", agent_type, " ".join(final_cmd))
             try:
                 proc = subprocess.Popen(
                     final_cmd,
-                    cwd=cwd,
+                    cwd=launch_cwd,
                     env=env,
                     creationflags=creation_flags,
                 )
@@ -266,7 +361,7 @@ class AgentProcessManager:
         def _run_one_tmux_iteration() -> bool:
             """Run one lifecycle in a tmux session (Mac/Linux). Returns False to stop retrying."""
             session = f"duckdome-{agent_type}"
-            abs_cwd = str(Path(cwd).resolve()) if cwd else str(Path.home())
+            abs_cwd = _resolve_launch_cwd(cwd)
 
             # Build shell command; prefix agent-specific env vars using env(1).
             # subprocess.run(env=...) only affects the tmux client binary —
@@ -345,15 +440,24 @@ class AgentProcessManager:
         proc_thread = threading.Thread(target=_run_loop, daemon=True, name=f"agent-{agent_type}")
         proc_thread.start()
 
-        # Start queue watcher
-        queue_thread = threading.Thread(
-            target=self._queue_watcher,
+        # Start wrapper helper loops.
+        self._start_queue_watcher_thread(agent_proc)
+        queue_monitor_thread = threading.Thread(
+            target=self._queue_monitor_loop,
             args=(agent_proc,),
             daemon=True,
-            name=f"queue-{agent_type}",
+            name=f"queue-monitor-{agent_type}",
         )
-        queue_thread.start()
-        agent_proc.queue_thread = queue_thread
+        queue_monitor_thread.start()
+        agent_proc.queue_monitor_thread = queue_monitor_thread
+        heartbeat_thread = threading.Thread(
+            target=self._heartbeat_loop,
+            args=(agent_proc,),
+            daemon=True,
+            name=f"heartbeat-{agent_type}",
+        )
+        heartbeat_thread.start()
+        agent_proc.heartbeat_thread = heartbeat_thread
 
         with self._lock:
             self._agents[agent_type] = agent_proc
@@ -420,6 +524,88 @@ class AgentProcessManager:
             ).returncode == 0
         return ap.proc is not None and ap.proc.poll() is None
 
+    def _app_url(self, path: str) -> str:
+        return f"http://127.0.0.1:{self._app_port}{path}"
+
+    def _start_queue_watcher_thread(self, agent_proc: AgentProcess) -> None:
+        queue_thread = threading.Thread(
+            target=self._queue_watcher,
+            args=(agent_proc,),
+            daemon=True,
+            name=f"queue-{agent_proc.agent_type}",
+        )
+        queue_thread.start()
+        agent_proc.queue_thread = queue_thread
+
+    def _post_agent_heartbeat(self, agent_proc: AgentProcess) -> bool:
+        """Refresh channel-scoped agent presence after chat_join.
+
+        This feature replaces the legacy wrapper heartbeat loop in
+        ``agentchattr/apps/server/src/wrapper.py``.
+
+        Differences from legacy behavior:
+        - DuckDome reports channel_id + agent_type instead of a mutable wrapper name.
+        - Heartbeats are best-effort and begin only after the proxy has observed
+          a joined channel.
+        """
+        channel = agent_proc.active_channel
+        if agent_proc.proxy is not None:
+            channel = agent_proc.proxy._get_joined_channel() or channel
+        if not channel or channel == "general":
+            return False
+
+        payload = json.dumps({
+            "channel_id": channel,
+            "agent_type": agent_proc.agent_type,
+        }).encode("utf-8")
+        req = Request(
+            self._app_url("/api/agents/heartbeat"),
+            data=payload,
+            method="POST",
+            headers={"Content-Type": "application/json"},
+        )
+        try:
+            with urlopen(req, timeout=5) as resp:
+                return resp.status == 200
+        except HTTPError as exc:
+            if exc.code != 404:
+                logger.warning("[%s] heartbeat failed: %s", agent_proc.agent_type, exc)
+        except (URLError, OSError) as exc:
+            logger.warning("[%s] heartbeat failed: %s", agent_proc.agent_type, exc)
+        return False
+
+    def _heartbeat_loop(self, agent_proc: AgentProcess) -> None:
+        agent_type = agent_proc.agent_type
+        logger.info("[%s] heartbeat waiting for process to start", agent_type)
+        agent_proc.ready_event.wait()
+        logger.info("[%s] heartbeat started", agent_type)
+
+        while not agent_proc.stop_event.is_set():
+            self._post_agent_heartbeat(agent_proc)
+            agent_proc.stop_event.wait(HEARTBEAT_INTERVAL)
+
+        logger.info("[%s] heartbeat stopped", agent_type)
+
+    def _queue_monitor_loop(self, agent_proc: AgentProcess) -> None:
+        agent_type = agent_proc.agent_type
+        logger.info("[%s] queue monitor waiting for process to start", agent_type)
+        agent_proc.ready_event.wait()
+        logger.info("[%s] queue monitor started", agent_type)
+
+        while not agent_proc.stop_event.is_set():
+            agent_proc.stop_event.wait(QUEUE_MONITOR_INTERVAL)
+            if agent_proc.stop_event.is_set():
+                break
+            if not self._is_alive(agent_type):
+                continue
+            queue_thread = agent_proc.queue_thread
+            if queue_thread and queue_thread.is_alive():
+                continue
+            logger.warning("[%s] queue watcher stopped unexpectedly; restarting", agent_type)
+            self._start_queue_watcher_thread(agent_proc)
+
+        logger.info("[%s] queue monitor stopped", agent_type)
+
     def _queue_watcher(self, agent_proc: AgentProcess) -> None:
         """Poll queue file and inject text into the agent's console."""
         agent_type = agent_proc.agent_type
@@ -444,11 +630,13 @@ class AgentProcessManager:
             for entry in entries:
                 channel = entry.get("channel", "general")
                 text = entry.get("text", "")
-                # Tell the agent to use chat_join + chat_read tools (not "mcp read" which
-                # Claude Code now interprets as a resource read request)
-                injection = (
-                    f"Use the chat_join tool with channel=\"{channel}\" and agent_type=\"{agent_type}\", "
-                    f"then use chat_read to see messages, then respond with chat_send."
+                sender = entry.get("sender", "human")
+                agent_proc.active_channel = str(channel).strip() or "general"
+                injection = _build_trigger_prompt(
+                    agent_type=agent_type,
+                    channel=channel,
+                    sender=sender,
+                    text=text,
                 )
                 logger.info("[%s] injecting prompt for channel=%s", agent_type, channel)
                 try:

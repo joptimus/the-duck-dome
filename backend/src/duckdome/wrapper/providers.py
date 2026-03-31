@@ -23,6 +23,7 @@ def build_launch_args(
                 cmd=[
                     "claude",
                     "--mcp-config", str(mcp_config_path),
+                    "--strict-mcp-config",
                 ],
             )
         case "codex":

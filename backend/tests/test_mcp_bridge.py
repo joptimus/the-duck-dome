@@ -153,3 +153,37 @@ def test_cursor_store_set_and_get():
     assert store.get_cursor("claude", "channel-a") is None
     store.set_cursor("claude", "channel-a", "msg-1")
     assert store.get_cursor("claude", "channel-a") == "msg-1"
+
+
+def test_chat_join_accepts_legacy_name_argument(bridge, stores, channel_id):
+    tool_map = {t.name: t.fn for t in bridge.mcp._tool_manager.list_tools()}
+    chat_join = tool_map["chat_join"]
+    message_store, _, _ = stores
+
+    assert chat_join(name="claude", channel=channel_id).startswith("Joined")
+    assert tool_map["chat_send"](message="legacy hello", sender="claude").startswith("Sent")
+
+    messages = message_store.list_by_channel(channel_id)
+    assert messages[-1].text == "legacy hello"
+    assert messages[-1].sender == "claude"
+
+
+def test_chat_read_accepts_legacy_sender_argument(bridge, stores, channel_id):
+    tool_map = {t.name: t.fn for t in bridge.mcp._tool_manager.list_tools()}
+    chat_read = tool_map["chat_read"]
+    message_store, _, _ = stores
+    message_service = MessageService(store=message_store, known_agents=["claude", "codex"])
+
+    message_service.send(text="legacy first", channel=channel_id, sender="human")
+    message_service.send(text="legacy second", channel=channel_id, sender="human")
+
+    result = chat_read(channel=channel_id, sender="claude", limit=10)
+    data = json.loads(result)
+    assert [m["text"] for m in data] == ["legacy first", "legacy second"]
+
+
+def test_legacy_compat_tools_are_registered(bridge):
+    tool_names = {t.name for t in bridge.mcp._tool_manager.list_tools()}
+    assert "chat_claim" in tool_names
+    assert "chat_who" in tool_names
+    assert "chat_channels" in tool_names

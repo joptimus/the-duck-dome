@@ -97,31 +97,64 @@ def test_safe_tools_pass_through(proxy):
     assert data["result"]["content"][0]["text"] == "ok"
 
 
-def test_sender_injection(proxy):
-    """Proxy should overwrite wrong sender with the agent name."""
-    _FakeMcpHandler.last_body = b""
+def test_chat_join_agent_type_injection():
+    proxy = McpProxy(
+        upstream_url="http://127.0.0.1:9999/mcp",
+        agent_name="claude",
+        app_port=9999,
+    )
+    payload = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "chat_join",
+            "arguments": {"channel": "general", "agent_type": "wrong"},
+        },
+    }).encode()
+
+    rewritten = json.loads(proxy._rewrite_tool_arguments(payload))
+    assert rewritten["params"]["arguments"]["agent_type"] == "claude"
+
+
+def test_chat_send_arguments_are_not_mutated():
+    proxy = McpProxy(
+        upstream_url="http://127.0.0.1:9999/mcp",
+        agent_name="claude",
+        app_port=9999,
+    )
     payload = json.dumps({
         "jsonrpc": "2.0",
         "id": 1,
         "method": "tools/call",
         "params": {
             "name": "chat_send",
-            "arguments": {"text": "hello", "sender": "wrong"},
+            "arguments": {"text": "hello"},
         },
     }).encode()
 
-    req = Request(
-        f"{proxy.url}/mcp",
-        data=payload,
-        method="POST",
-        headers={"Content-Type": "application/json"},
-    )
-    with urlopen(req, timeout=5) as resp:
-        assert resp.status == 200
+    rewritten = json.loads(proxy._rewrite_tool_arguments(payload))
+    assert rewritten["params"]["arguments"] == {"text": "hello", "sender": "claude"}
 
-    # Verify the forwarded body has the agent name injected, not "wrong"
-    forwarded = json.loads(_FakeMcpHandler.last_body)
-    assert forwarded["params"]["arguments"]["sender"] == "claude"
+
+def test_chat_read_sender_is_injected_for_legacy_compat():
+    proxy = McpProxy(
+        upstream_url="http://127.0.0.1:9999/mcp",
+        agent_name="claude",
+        app_port=9999,
+    )
+    payload = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "chat_read",
+            "arguments": {"channel": "general"},
+        },
+    }).encode()
+
+    rewritten = json.loads(proxy._rewrite_tool_arguments(payload))
+    assert rewritten["params"]["arguments"]["sender"] == "claude"
 
 
 def test_safe_tools_list():
@@ -130,3 +163,47 @@ def test_safe_tools_list():
     assert "chat_join" in _SAFE_TOOLS
     assert "chat_read" in _SAFE_TOOLS
     assert "chat_rules" in _SAFE_TOOLS
+
+
+def test_chat_join_sets_channel_context():
+    proxy = McpProxy(
+        upstream_url="http://127.0.0.1:9999/mcp",
+        agent_name="claude",
+        app_port=9999,
+    )
+
+    payload = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 1,
+        "method": "tools/call",
+        "params": {
+            "name": "chat_join",
+            "arguments": {"channel": "channel-123", "agent_type": "claude"},
+        },
+    }).encode()
+    proxy._extract_tool_calls(payload)
+    assert proxy._get_joined_channel() == "channel-123"
+
+
+def test_extract_tool_calls_falls_back_to_joined_channel():
+    proxy = McpProxy(
+        upstream_url="http://127.0.0.1:9999/mcp",
+        agent_name="claude",
+        app_port=9999,
+    )
+    proxy._set_joined_channel("channel-123")
+
+    payload = json.dumps({
+        "jsonrpc": "2.0",
+        "id": 2,
+        "method": "tools/call",
+        "params": {
+            "name": "exec_command",
+            "arguments": {"cmd": "pwd"},
+        },
+    }).encode()
+
+    calls = proxy._extract_tool_calls(payload)
+
+    assert len(calls) == 1
+    assert calls[0]["channel"] == "channel-123"

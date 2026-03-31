@@ -38,7 +38,7 @@ from duckdome.mcp.bridge import McpBridge
 from duckdome.mcp.transport import run_mcp_server
 
 
-def _wait_for_mcp(port: int = 8200, timeout: float = 10.0) -> None:
+def _wait_for_mcp(port: int = 8200, timeout: float = 10.0) -> bool:
     """Block until the MCP server is accepting connections."""
     import json
     deadline = time.time() + timeout
@@ -63,11 +63,12 @@ def _wait_for_mcp(port: int = 8200, timeout: float = 10.0) -> None:
             with urlopen(req, timeout=3) as resp:
                 if resp.status == 200:
                     logger.info("MCP server ready on port %d", port)
-                    return
+                    return True
         except (URLError, OSError):
             pass
         time.sleep(0.3)
-    logger.warning("MCP server not ready after %.0fs — starting agents anyway", timeout)
+    logger.error("MCP server not ready after %.0fs — not starting agents", timeout)
+    return False
 
 
 def _start_agents_deferred(wrapper_service, stop_event: threading.Event) -> None:
@@ -80,14 +81,14 @@ def _start_agents_deferred(wrapper_service, stop_event: threading.Event) -> None
     """
     import shutil
 
-    _wait_for_mcp(port=8200)
-    if stop_event.is_set():
+    mcp_ready = _wait_for_mcp(port=8200)
+    if stop_event.is_set() or not mcp_ready:
         return
 
     # Also wait for FastAPI to be serving (the proxy needs :8000 for
     # tool approval API calls)
-    _wait_for_http(port=8000)
-    if stop_event.is_set():
+    http_ready = _wait_for_http(port=8000)
+    if stop_event.is_set() or not http_ready:
         return
 
     for agent_type in ["claude", "codex", "gemini"]:
@@ -99,20 +100,21 @@ def _start_agents_deferred(wrapper_service, stop_event: threading.Event) -> None
             logger.info("Skipping %s: CLI not found in PATH", agent_type)
 
 
-def _wait_for_http(port: int = 8000, timeout: float = 10.0) -> None:
+def _wait_for_http(port: int = 8000, timeout: float = 10.0) -> bool:
     """Block until the HTTP server is accepting connections."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            req = Request(f"http://127.0.0.1:{port}/api/health", method="GET")
+            req = Request(f"http://127.0.0.1:{port}/health", method="GET")
             with urlopen(req, timeout=3) as resp:
                 if resp.status == 200:
                     logger.info("FastAPI server ready on port %d", port)
-                    return
+                    return True
         except (URLError, OSError):
             pass
         time.sleep(0.3)
-    logger.warning("FastAPI server not ready after %.0fs — starting agents anyway", timeout)
+    logger.error("FastAPI server not ready after %.0fs — not starting agents", timeout)
+    return False
 
 
 @asynccontextmanager
