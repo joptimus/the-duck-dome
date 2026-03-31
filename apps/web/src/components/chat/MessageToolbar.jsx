@@ -18,9 +18,7 @@ export function MessageToolbar({ visible, roleOpen = false, agentColor, messageT
     return () => window.clearTimeout(timeoutId);
   }, [copied]);
 
-  if (!visible && !roleOpen) {
-    return null;
-  }
+  const isVisible = visible || roleOpen;
 
   const handleCopy = async () => {
     try {
@@ -35,7 +33,10 @@ export function MessageToolbar({ visible, roleOpen = false, agentColor, messageT
   };
 
   return (
-    <div className={styles.toolbar} style={{ borderTopColor: `${agentColor}2e` }}>
+    <div
+      className={`${styles.toolbar} ${isVisible ? styles.toolbarVisible : ''}`}
+      style={{ borderTopColor: `${agentColor}2e` }}
+    >
       <button className={styles.btn} title="Reply" type="button" aria-label="Reply">
         <ReplyIcon size={13} color="currentColor" />
       </button>

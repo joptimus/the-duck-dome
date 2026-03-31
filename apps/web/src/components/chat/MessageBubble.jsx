@@ -127,12 +127,6 @@ export function MessageBubble({ message, index = 0 }) {
       ref={rowRef}
       className={`${styles.row} ${isUser ? styles.rowUser : ''}`}
       style={{ animation: `fadeUp 0.3s ease ${index * 0.06}s both` }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => {
-        if (!roleOpen) {
-          setHovered(false);
-        }
-      }}
     >
       {!isUser && (
         <div
@@ -151,6 +145,13 @@ export function MessageBubble({ message, index = 0 }) {
         style={{
           background: meta?.bg,
           borderColor: hovered || roleOpen ? `${meta?.color}66` : meta?.border,
+          boxShadow: hovered || roleOpen ? `0 0 12px ${meta?.color}14` : 'none',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => {
+          if (!roleOpen) {
+            setHovered(false);
+          }
         }}
       >
         <div className={`${styles.header} ${isUser ? styles.headerUser : ''}`}>
