@@ -1,5 +1,16 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { agentMeta, allAgentTypes } from "../../constants/agents";
+
+function formatUptime(startedAt) {
+  if (!startedAt) return "";
+  const seconds = Math.floor(Date.now() / 1000 - startedAt);
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  const remMin = minutes % 60;
+  return `${hours}h ${remMin}m`;
+}
 import { ElectricPulse } from "../effects/ElectricPulse";
 import {
   AgentLogo,
@@ -102,7 +113,7 @@ export function AgentsPanel({
                   </div>
                   {agent.running ? (
                     <div className={styles.pidLine}>
-                      PID {agent.pid} &middot; up {agent.uptime}
+                      PID {agent.pid || "—"} &middot; up {formatUptime(agent.started_at)}
                     </div>
                   ) : null}
                 </div>

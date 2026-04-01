@@ -127,7 +127,7 @@ export function MessageBubble({
       id={`message-${message.id}`}
       ref={rowRef}
       className={`${styles.row} ${isUser ? styles.rowUser : ''}`}
-      style={{ animation: `fadeUp 0.3s ease ${index * 0.06}s both` }}
+      style={{ animation: 'fadeUp 0.45s cubic-bezier(0.4, 0, 0.2, 1) both' }}
     >
       {!isUser && (
         <div

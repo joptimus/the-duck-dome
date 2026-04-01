@@ -4,15 +4,18 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from duckdome.services.channel_service import ChannelService
+from duckdome.services.wrapper_service import WrapperService
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 _service: ChannelService | None = None
+_wrapper_service: WrapperService | None = None
 
 
-def init(service: ChannelService) -> None:
-    global _service
+def init(service: ChannelService, wrapper_service: WrapperService | None = None) -> None:
+    global _service, _wrapper_service
     _service = service
+    _wrapper_service = wrapper_service
 
 
 def _get_service() -> ChannelService:
@@ -63,7 +66,19 @@ def list_agents(channel_id: str):
     if not svc.validate_channel(channel_id):
         raise HTTPException(status_code=404, detail="Channel not found")
     agents = svc.list_agents(channel_id)
-    return [a.model_dump() for a in agents]
+    result = []
+    for a in agents:
+        data = a.model_dump()
+        if _wrapper_service:
+            details = _wrapper_service.get_agent_details(a.agent_type, channel_id=channel_id)
+            if details:
+                data["pid"] = details.get("pid")
+                data["started_at"] = details.get("started_at")
+                data["running"] = True
+            else:
+                data["running"] = False
+        result.append(data)
+    return result
 
 
 @router.post("/{channel_id}/agents", status_code=201)

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { MessageBubble } from './MessageBubble';
 import { SystemMessage } from './SystemMessage';
 import { ToolApprovalCard } from './ToolApprovalCard';
@@ -19,8 +19,11 @@ export function ChatTimeline({
 }) {
   const bottomRef = useRef(null);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  useLayoutEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+    return () => cancelAnimationFrame(frame);
   }, [messages.length]);
 
   if (messages.length === 0) {

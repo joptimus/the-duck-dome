@@ -70,8 +70,8 @@ def _resolve_inject_delay(agent_type: str) -> float:
     - Other agents keep DuckDome's faster default delay.
     """
     if agent_type == "codex":
-        return 0.4
-    return 0.03
+        return 1.5
+    return 0.05
 
 
 def _resolve_cmd_shim(cmd: list[str]) -> list[str]:
@@ -185,22 +185,15 @@ def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: s
 
     if agent_type == "claude":
         prompt = (
-            "DuckDome MCP is already configured in this session under the server name "
-            '"duckdome". Use the DuckDome MCP chat tools for this task. '
-            f'First call chat_join(channel="{normalized_channel}", agent_type="claude"). '
-            "Do not use channel_id for chat_join; the MCP argument name is channel. "
-            "Then call chat_read(channel="
-            f'"{normalized_channel}") to read the latest messages there, '
-            "take appropriate action, and reply in that same DuckDome channel. "
-            "Do not treat this as a generic MCP resource lookup. "
-            "Do not inspect ~/.claude settings, .mcp.json files, or other local config files. "
-            "Do not use curl or direct HTTP calls for DuckDome chat if the DuckDome MCP server is available. "
+            f'Use DuckDome MCP: chat_join(channel="{normalized_channel}", agent_type="claude"), '
+            f'then chat_read(channel="{normalized_channel}"). '
+            f'Always pass sender="claude" in chat_send and chat_read calls. '
         )
         if normalized_text:
-            prompt += f"Request: {normalized_text} "
+            prompt += f"{normalized_sender} asks: {normalized_text} "
         else:
-            prompt += "Request text was not included. "
-        prompt += f"You were triggered by {normalized_sender}. Reply in chat when done."
+            prompt += f"Triggered by {normalized_sender}. "
+        prompt += "Do the work, then reply with chat_send."
         return prompt
 
     prompt = (
@@ -295,6 +288,7 @@ class AgentProcess:
     inject_delay: float = 0.03
     presence_channel: str | None = None
     console_monitor: ConsoleMonitor | None = None
+    key: str = ""  # compound key: "agent_type:channel_id"
 
 
 class AgentProcessManager:
@@ -307,6 +301,7 @@ class AgentProcessManager:
         mcp_host: str = "127.0.0.1",
         app_port: int = 8000,
         tool_approval_service=None,
+        ws_manager=None,
     ) -> None:
         self._data_dir = data_dir
         self._data_dir.mkdir(parents=True, exist_ok=True)
@@ -314,43 +309,58 @@ class AgentProcessManager:
         self._mcp_url = f"http://{mcp_host}:{mcp_port}/mcp"
         self._app_port = app_port
         self._tool_approval_service = tool_approval_service
+        self._ws_manager = ws_manager
         self._agents: dict[str, AgentProcess] = {}
         self._starting: set[str] = set()
         self._lock = threading.Lock()
+
+    @staticmethod
+    def _agent_key(agent_type: str, channel_id: str = "") -> str:
+        """Build the dict key for an agent process.
+
+        Uses ``--`` as separator instead of ``:`` because colons are
+        illegal in Windows file paths and the key is also used as the
+        queue file name.
+        """
+        return f"{agent_type}--{channel_id}" if channel_id else agent_type
 
     def start_agent(
         self,
         agent_type: str,
         cwd: str | None = None,
         auto_restart: bool = True,
+        channel_id: str = "",
     ) -> bool:
         """Start a persistent agent process.
 
-        Returns True if started, False if already running.
+        When *channel_id* is provided, a separate process is started for
+        that channel.  Returns True if started, False if already running.
         """
+        key = self._agent_key(agent_type, channel_id)
         with self._lock:
-            if agent_type in self._starting:
-                logger.info("[%s] start already in progress", agent_type)
+            if key in self._starting:
+                logger.info("[%s] start already in progress", key)
                 return False
-            if agent_type in self._agents and self._is_alive(agent_type):
-                logger.info("[%s] already running (pid=%s)", agent_type, self._agents[agent_type].pid)
+            if key in self._agents and self._is_alive(key):
+                logger.info("[%s] already running (pid=%s)", key, self._agents[key].pid)
                 return False
-            self._starting.add(agent_type)
+            self._starting.add(key)
 
         try:
-            return self._start_agent_inner(agent_type, cwd, auto_restart)
+            return self._start_agent_inner(agent_type, cwd, auto_restart, channel_id=channel_id)
         except Exception:
-            logger.exception("[%s] start_agent failed", agent_type)
+            logger.exception("[%s] start_agent failed", key)
             return False
         finally:
             with self._lock:
-                self._starting.discard(agent_type)
+                self._starting.discard(key)
 
     def _start_agent_inner(
         self,
         agent_type: str,
         cwd: str | None,
         auto_restart: bool,
+        channel_id: str = "",
     ) -> bool:
         proxy: McpProxy | None = None
         mcp_target_url = self._mcp_url
@@ -407,6 +417,8 @@ class AgentProcessManager:
             agent_type=agent_type,
             proxy=proxy,
             inject_delay=_resolve_inject_delay(agent_type),
+            active_channel=channel_id or "general",
+            key=self._agent_key(agent_type, channel_id),
         )
 
         def _run_one_popen_iteration() -> bool:
@@ -549,15 +561,17 @@ class AgentProcessManager:
         heartbeat_thread.start()
         agent_proc.heartbeat_thread = heartbeat_thread
 
+        key = self._agent_key(agent_type, channel_id)
         with self._lock:
-            self._agents[agent_type] = agent_proc
+            self._agents[key] = agent_proc
 
         return True
 
-    def stop_agent(self, agent_type: str) -> bool:
+    def stop_agent(self, agent_type: str, channel_id: str = "") -> bool:
         """Stop a persistent agent process."""
+        key = self._agent_key(agent_type, channel_id)
         with self._lock:
-            agent_proc = self._agents.pop(agent_type, None)
+            agent_proc = self._agents.pop(key, None)
 
         if agent_proc is None:
             return False
@@ -589,29 +603,94 @@ class AgentProcessManager:
     def stop_all(self) -> None:
         """Stop all agent processes."""
         with self._lock:
-            agent_types = list(self._agents.keys())
-        for at in agent_types:
-            self.stop_agent(at)
+            keys = list(self._agents.keys())
+        for key in keys:
+            # Keys are "agent_type--channel_id" or just "agent_type"
+            parts = key.split("--", 1)
+            self.stop_agent(parts[0], parts[1] if len(parts) > 1 else "")
 
-    def is_running(self, agent_type: str) -> bool:
+    def is_running(self, agent_type: str, channel_id: str = "") -> bool:
+        key = self._agent_key(agent_type, channel_id)
         with self._lock:
-            return agent_type in self._agents and self._is_alive(agent_type)
+            return key in self._agents and self._is_alive(key)
 
     def list_running(self) -> list[str]:
         with self._lock:
-            return [at for at in self._agents if self._is_alive(at)]
+            return [key for key in self._agents if self._is_alive(key)]
+
+    def get_agent_details(self, agent_type: str, channel_id: str = "") -> dict | None:
+        """Return pid and started_at for a running agent."""
+        key = self._agent_key(agent_type, channel_id)
+        with self._lock:
+            ap = self._agents.get(key)
+            if ap is None or not self._is_alive(key):
+                return None
+            return {
+                "pid": ap.pid,
+                "started_at": ap.started_at,
+            }
 
     def trigger_agent(self, agent_type: str, sender: str, text: str, channel: str) -> bool:
-        """Write a queue entry for the agent. Returns True if agent is running."""
+        """Trigger the agent for a specific channel.
+
+        If a per-channel process exists, uses it. Otherwise starts one.
+        """
         from duckdome.wrapper.queue import write_queue_entry
 
-        if not self.is_running(agent_type):
-            return False
-        write_queue_entry(self._data_dir, agent_type, sender, text, channel)
+        key = self._agent_key(agent_type, channel)
+        if not self.is_running(agent_type, channel):
+            # Auto-start a per-channel process.
+            # start_agent launches threads in the background; the queue
+            # watcher will pick up the entry once ready_event fires.
+            self.start_agent(agent_type, channel_id=channel)
+
+        write_queue_entry(self._data_dir, key, sender, text, channel)
+
+        # Register agent in channel (triggers "joined" system message)
+        # and immediately set status to "working".
+        for endpoint in ["/api/agents/register", "/api/agents/heartbeat"]:
+            try:
+                payload = json.dumps({
+                    "channel_id": channel,
+                    "agent_type": agent_type,
+                }).encode("utf-8")
+                req = Request(
+                    self._app_url(endpoint),
+                    data=payload,
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                urlopen(req, timeout=3)
+            except Exception:
+                pass  # best effort
+
+        # Set stored status to working and broadcast.
+        try:
+            payload = json.dumps({
+                "channel_id": channel,
+                "agent_type": agent_type,
+                "status": "working",
+            }).encode("utf-8")
+            req = Request(
+                self._app_url("/api/agents/status"),
+                data=payload,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            urlopen(req, timeout=3)
+        except Exception:
+            # Fallback: just broadcast via WS
+            if self._ws_manager:
+                self._ws_manager.broadcast_sync({
+                    "type": "agent_status_change",
+                    "agent_id": f"{channel}:{agent_type}",
+                    "status": "working",
+                })
+
         return True
 
-    def _is_alive(self, agent_type: str) -> bool:
-        ap = self._agents.get(agent_type)
+    def _is_alive(self, key: str) -> bool:
+        ap = self._agents.get(key)
         if ap is None:
             return False
         if sys.platform != "win32" and ap.tmux_session:
@@ -734,21 +813,22 @@ class AgentProcessManager:
 
     def _queue_watcher(self, agent_proc: AgentProcess) -> None:
         """Poll queue file and inject text into the agent's console."""
+        agent_key = agent_proc.key or agent_proc.agent_type
         agent_type = agent_proc.agent_type
-        logger.info("[%s] queue watcher waiting for process to start", agent_type)
+        logger.info("[%s] queue watcher waiting for process to start", agent_key)
         # Wait for the process to actually start before polling the queue
         agent_proc.ready_event.wait()
-        logger.info("[%s] queue watcher started", agent_type)
+        logger.info("[%s] queue watcher started", agent_key)
 
         while not agent_proc.stop_event.is_set():
             agent_proc.stop_event.wait(QUEUE_POLL_INTERVAL)
             if agent_proc.stop_event.is_set():
                 break
 
-            if not self._is_alive(agent_type):
+            if not self._is_alive(agent_key):
                 continue
 
-            entries = read_queue_entries(self._data_dir, agent_type)
+            entries = read_queue_entries(self._data_dir, agent_key)
             if not entries:
                 continue
 

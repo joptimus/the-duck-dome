@@ -1,18 +1,18 @@
 """MCP session identity tracking.
 
-This feature replaces legacy MCP identity claim behavior from
-``agentchattr/apps/server/src/mcp_bridge.py:chat_claim``.
-
-Differences from legacy behavior:
-- Uses a simple session-bound identity set by ``chat_join``.
-- No multi-instance reclaim flow in this PR.
+Maps agent_type + channel pairs so that chat_send/chat_read can
+determine which agent is calling even when the MCP framework does
+not provide usable session IDs.
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from threading import Lock
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -22,47 +22,40 @@ class AgentIdentity:
 
 
 class SessionIdentityStore:
-    """Tracks agent identity per MCP session."""
+    """Tracks agent identity keyed by agent_type:channel."""
 
     def __init__(self) -> None:
-        self._identity_by_session: dict[str, AgentIdentity] = {}
+        self._identities: dict[str, AgentIdentity] = {}
         self._lock = Lock()
-
-    def _session_key(self, ctx: Any | None) -> str:
-        if ctx is None:
-            return "__default__"
-
-        candidates = [
-            getattr(ctx, "session_id", None),
-            getattr(ctx, "session", None),
-            getattr(ctx, "client_id", None),
-        ]
-        request_ctx = getattr(ctx, "request_context", None)
-        if request_ctx is not None:
-            candidates.extend(
-                [
-                    getattr(request_ctx, "session_id", None),
-                    getattr(request_ctx, "session", None),
-                ]
-            )
-
-        for candidate in candidates:
-            if candidate is None:
-                continue
-            value = str(candidate).strip()
-            if value:
-                return value
-
-        return f"ctx:{id(ctx)}"
 
     def set(self, ctx: Any | None, channel: str, agent_type: str) -> AgentIdentity:
         identity = AgentIdentity(channel=channel, agent_type=agent_type)
-        key = self._session_key(ctx)
+        key = f"{agent_type.lower()}:{channel}"
+        log.info("[identity] SET key=%s", key)
         with self._lock:
-            self._identity_by_session[key] = identity
+            self._identities[key] = identity
         return identity
 
-    def get(self, ctx: Any | None) -> AgentIdentity | None:
-        key = self._session_key(ctx)
+    def get_by_agent(self, agent_type: str, channel: str = "") -> AgentIdentity | None:
+        """Look up identity by agent_type, optionally scoped to channel."""
+        at = agent_type.lower()
         with self._lock:
-            return self._identity_by_session.get(key)
+            if channel:
+                return self._identities.get(f"{at}:{channel}")
+            # No channel specified — find the first match for this agent type.
+            for key, identity in self._identities.items():
+                if key.startswith(f"{at}:"):
+                    return identity
+        return None
+
+    def find_by_channel(self, channel: str) -> AgentIdentity | None:
+        """Find any agent identity for a given channel."""
+        with self._lock:
+            for identity in self._identities.values():
+                if identity.channel == channel:
+                    return identity
+        return None
+
+    def get(self, ctx: Any | None) -> AgentIdentity | None:
+        """Legacy get — returns None since ctx is always None."""
+        return None

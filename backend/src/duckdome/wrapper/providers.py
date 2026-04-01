@@ -35,6 +35,7 @@ def build_launch_args(
         case "codex":
             cmd = [
                 "codex",
+                "--ask-for-approval", "untrusted",
                 "-c", f'mcp_servers.duckdome.url="{mcp_url}"',
             ]
             for tool_name in DUCKDOME_STARTUP_SAFE_TOOLS:
