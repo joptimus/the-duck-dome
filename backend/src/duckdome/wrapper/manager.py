@@ -186,7 +186,10 @@ def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: s
         prompt = (
             "DuckDome MCP is already configured in this session under the server name "
             '"duckdome". Use the DuckDome MCP chat tools for this task. '
-            f'Join channel "{normalized_channel}", read the latest messages there, '
+            f'First call chat_join(channel="{normalized_channel}", agent_type="claude"). '
+            "Do not use channel_id for chat_join; the MCP argument name is channel. "
+            "Then call chat_read(channel="
+            f'"{normalized_channel}") to read the latest messages there, '
             "take appropriate action, and reply in that same DuckDome channel. "
             "Do not treat this as a generic MCP resource lookup. "
             "Do not inspect ~/.claude settings, .mcp.json files, or other local config files. "
