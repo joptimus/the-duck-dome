@@ -69,8 +69,7 @@ function stopBackend() {
     });
 
     try {
-      const sent = proc.kill("SIGINT");
-      if (!sent) {
+      if (!proc.kill("SIGINT")) {
         clearTimeout(timeout);
         finish();
       }

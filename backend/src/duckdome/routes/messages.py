@@ -25,6 +25,7 @@ class SendMessageRequest(BaseModel):
     text: str = Field(min_length=1)
     channel: str = Field(min_length=1)
     sender: str = Field(min_length=1)
+    reply_to: str | None = None
 
 
 class AgentSeenRequest(BaseModel):
@@ -52,7 +53,12 @@ class AgentResponseRequest(BaseModel):
 def send_message(body: SendMessageRequest):
     svc = _get_service()
     try:
-        msg = svc.send(text=body.text, channel=body.channel, sender=body.sender)
+        msg = svc.send(
+            text=body.text,
+            channel=body.channel,
+            sender=body.sender,
+            reply_to=body.reply_to,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return msg.model_dump()
@@ -63,6 +69,15 @@ def list_messages(channel: str, after: str | None = None):
     svc = _get_service()
     msgs = svc.list_messages(channel, after_id=after)
     return [m.model_dump() for m in msgs]
+
+
+@router.delete("/{msg_id}", status_code=204)
+def delete_message(msg_id: str):
+    svc = _get_service()
+    deleted = svc.delete_message(msg_id)
+    if deleted is None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    return None
 
 
 # Static routes MUST come before parameterized routes

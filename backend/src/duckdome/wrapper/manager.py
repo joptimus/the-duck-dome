@@ -70,8 +70,8 @@ def _resolve_inject_delay(agent_type: str) -> float:
     - Other agents keep DuckDome's faster default delay.
     """
     if agent_type == "codex":
-        return 0.3
-    return 0.01
+        return 0.4
+    return 0.03
 
 
 def _resolve_cmd_shim(cmd: list[str]) -> list[str]:
@@ -292,7 +292,7 @@ class AgentProcess:
     stop_event: threading.Event = field(default_factory=threading.Event)
     ready_event: threading.Event = field(default_factory=threading.Event)
     started_at: float | None = None
-    inject_delay: float = 0.01
+    inject_delay: float = 0.03
     presence_channel: str | None = None
     console_monitor: ConsoleMonitor | None = None
 

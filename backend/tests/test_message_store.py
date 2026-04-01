@@ -86,3 +86,12 @@ def test_list_by_delivery_state(store):
     pending = store.list_by_delivery_state("sent")
     assert len(pending) == 2
     assert all(m.delivery.state == "sent" for m in pending)
+
+
+def test_delete_message(store):
+    msg = Message(text="delete me", channel="general", sender="human")
+    store.add(msg)
+    deleted = store.delete(msg.id)
+    assert deleted is not None
+    assert deleted.id == msg.id
+    assert store.get(msg.id) is None

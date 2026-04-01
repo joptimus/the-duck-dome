@@ -9,7 +9,18 @@ import {
 } from '../icons';
 import styles from './MessageToolbar.module.css';
 
-export function MessageToolbar({ visible, roleOpen = false, agentColor, messageText = '', onCopy }) {
+export function MessageToolbar({
+  visible,
+  roleOpen = false,
+  agentColor,
+  messageText = '',
+  pinned = false,
+  onCopy,
+  onReply,
+  onPin,
+  onConvertToJob,
+  onDelete,
+}) {
   const [copied, setCopied] = useState(false);
 
   useEffect(() => {
@@ -40,10 +51,16 @@ export function MessageToolbar({ visible, roleOpen = false, agentColor, messageT
       className={`${styles.toolbar} ${isVisible ? styles.toolbarVisible : ''}`}
       style={{ borderTopColor }}
     >
-      <button className={styles.btn} title="Reply unavailable" type="button" aria-label="Reply" disabled>
+      <button className={styles.btn} title="Reply" type="button" aria-label="Reply" onClick={onReply}>
         <ReplyIcon size={13} color="currentColor" />
       </button>
-      <button className={styles.btn} title="Pin unavailable" type="button" aria-label="Pin" disabled>
+      <button
+        className={`${styles.btn} ${pinned ? styles.pinned : ''}`}
+        title={pinned ? 'Unpin' : 'Pin'}
+        type="button"
+        aria-label={pinned ? 'Unpin' : 'Pin'}
+        onClick={onPin}
+      >
         <PinIcon size={13} color="currentColor" />
       </button>
       <button
@@ -56,11 +73,11 @@ export function MessageToolbar({ visible, roleOpen = false, agentColor, messageT
         {copied ? <CheckIcon size={13} color="currentColor" /> : <CopyIcon size={13} color="currentColor" />}
         {copied && <div className={styles.tooltip}>Copied!</div>}
       </button>
-      <button className={styles.btn} title="Convert to Job unavailable" type="button" aria-label="Convert to Job" disabled>
+      <button className={styles.btn} title="Convert to Job" type="button" aria-label="Convert to Job" onClick={onConvertToJob}>
         <BoltIcon size={11} color="currentColor" glow={false} />
       </button>
       <div className={styles.spacer} />
-      <button className={`${styles.btn} ${styles.btnDelete}`} title="Delete unavailable" type="button" aria-label="Delete" disabled>
+      <button className={`${styles.btn} ${styles.btnDelete}`} title="Delete" type="button" aria-label="Delete" onClick={onDelete}>
         <TrashIcon size={13} color="currentColor" />
       </button>
     </div>

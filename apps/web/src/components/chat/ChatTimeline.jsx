@@ -5,7 +5,18 @@ import { ToolApprovalCard } from './ToolApprovalCard';
 import { DateDivider } from './DateDivider';
 import styles from './ChatTimeline.module.css';
 
-export function ChatTimeline({ messages = [], channelName, onApprove, onDeny }) {
+export function ChatTimeline({
+  messages = [],
+  channelName,
+  onApprove,
+  onDeny,
+  onReply,
+  onDelete,
+  onPin,
+  onConvertToJob,
+  onReplyJump,
+  pinnedMessageIds = [],
+}) {
   const bottomRef = useRef(null);
 
   useEffect(() => {
@@ -40,7 +51,19 @@ export function ChatTimeline({ messages = [], channelName, onApprove, onDeny }) 
         if (msg.type === 'system' || msg.sender_type === 'system') {
           return <SystemMessage key={msg.id} msg={msg} idx={idx} />;
         }
-        return <MessageBubble key={msg.id} message={msg} index={idx} />;
+        return (
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            index={idx}
+            onReply={onReply}
+            onDelete={onDelete}
+            onPin={onPin}
+            onConvertToJob={onConvertToJob}
+            onReplyJump={onReplyJump}
+            isPinned={pinnedMessageIds.includes(msg.id)}
+          />
+        );
       })}
       <div ref={bottomRef} />
     </div>

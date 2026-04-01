@@ -2,10 +2,13 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   addChannelAgent,
   createChannel,
+  createJob,
+  deleteChannelMessage,
   deregisterRuntimeAgent,
   triggerAgent,
   getChannel,
   getChannelAgents,
+  getJobs,
   getChannelMessages,
   getPendingToolRequests,
   getChannels,
@@ -31,6 +34,8 @@ import { ActivityPanel, AgentsPanel, JobsPanel, RulesPanel, SettingsPanel } from
 import { SessionLauncher } from "../../components/modals/SessionLauncher";
 import { ScheduleModal } from "../../components/modals/ScheduleModal";
 import CreateChannelModal from "../../components/modals/CreateChannelModal";
+
+const PINNED_MESSAGES_STORAGE_KEY = "duckdome.pinnedMessages";
 
 function normalizeChannels(data) {
   if (!Array.isArray(data)) return [];
@@ -138,10 +143,59 @@ function normalizeMessages(data, channelId) {
       text: message.text || "",
       content: message.content || message.text || "",
       channel: message.channel || message.channel_id || channelId || "",
+      reply_to: message.reply_to || null,
       time: formatClockTime(message.timestamp ?? message.time),
       timestamp: message.timestamp ?? message.time,
     };
   });
+}
+
+function normalizeJobs(data) {
+  if (!Array.isArray(data)) return [];
+  return data.map((job) => ({
+    id: String(job.id || ""),
+    title: String(job.title || "Untitled job"),
+    body: String(job.body || ""),
+    channel: String(job.channel || ""),
+    status: String(job.status || "open").toLowerCase(),
+  }));
+}
+
+function decorateMessages(messages) {
+  const byId = new Map(messages.map((message) => [message.id, message]));
+  return messages.map((message) => {
+    if (!message.reply_to) return message;
+    const target = byId.get(message.reply_to);
+    return {
+      ...message,
+      reply_preview: target
+        ? {
+            id: target.id,
+            sender: target.sender,
+            text: String(target.content || target.text || "").slice(0, 120),
+          }
+        : {
+            id: message.reply_to,
+            sender: "Message",
+            text: "",
+          },
+    };
+  });
+}
+
+function loadPinnedMessages() {
+  if (typeof window === "undefined") return {};
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(PINNED_MESSAGES_STORAGE_KEY) || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const result = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (Array.isArray(value)) result[key] = value;
+    }
+    return result;
+  } catch {
+    return {};
+  }
 }
 
 function formatApprovalTime(value) {
@@ -307,6 +361,9 @@ export default function ChannelShell() {
   const [triggerError, setTriggerError] = useState(null);
   const [messagesError, setMessagesError] = useState(null);
   const [messagesByChannelId, setMessagesByChannelId] = useState(mockMessagesByChannelId);
+  const [jobsByChannelId, setJobsByChannelId] = useState({});
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [pinnedByChannelId, setPinnedByChannelId] = useState(() => loadPinnedMessages());
   const [createOpen, setCreateOpen] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const activeChannelIdRef = useRef(null);
@@ -377,6 +434,7 @@ export default function ChannelShell() {
     setActiveChannel(null);
     setAgents([]);
     setTriggers([]);
+    setReplyingTo(null);
     setChannelError(null);
     setAgentError(null);
     setTriggerError(null);
@@ -400,12 +458,13 @@ export default function ChannelShell() {
     if (!activeChannelId) return undefined;
 
     async function loadChannelContext() {
-      const [channelResult, agentsResult, triggersResult, messagesResult, approvalsResult] = await Promise.allSettled([
+      const [channelResult, agentsResult, triggersResult, messagesResult, approvalsResult, jobsResult] = await Promise.allSettled([
         getChannel(activeChannelId),
         getChannelAgents(activeChannelId),
         getChannelTriggers(activeChannelId),
         getChannelMessages(activeChannelId),
         getPendingToolRequests(activeChannelId),
+        getJobs(activeChannelId),
       ]);
       if (ignore) return;
 
@@ -441,10 +500,12 @@ export default function ChannelShell() {
             : [];
         setMessagesByChannelId((prev) => ({
           ...prev,
-          [activeChannelId]: mergeChannelTimeline(
-            normalized,
-            approvalMessages,
-            prev[activeChannelId] || [],
+          [activeChannelId]: decorateMessages(
+            mergeChannelTimeline(
+              normalized,
+              approvalMessages,
+              prev[activeChannelId] || [],
+            ),
           ),
         }));
         setMessagesError(null);
@@ -455,6 +516,13 @@ export default function ChannelShell() {
         }));
         setMessagesError("Messages unavailable");
       }
+
+      if (jobsResult.status === "fulfilled") {
+        setJobsByChannelId((prev) => ({
+          ...prev,
+          [activeChannelId]: normalizeJobs(jobsResult.value),
+        }));
+      }
     }
 
     loadChannelContext();
@@ -462,6 +530,11 @@ export default function ChannelShell() {
       ignore = true;
     };
   }, [activeChannelId]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(PINNED_MESSAGES_STORAGE_KEY, JSON.stringify(pinnedByChannelId));
+  }, [pinnedByChannelId]);
 
   // WebSocket connection for real-time updates (replaces 3-second polling).
   useEffect(() => {
@@ -478,9 +551,25 @@ export default function ChannelShell() {
               (msg) => !existing.some((e) => e.id === msg.id),
             );
             if (deduped.length === 0) return prev;
-            return { ...prev, [channelId]: [...existing, ...deduped] };
+            return { ...prev, [channelId]: decorateMessages([...existing, ...deduped]) };
           });
         }
+      }
+
+      if (event.type === "message_deleted" && event.message_id && event.channel) {
+        setMessagesByChannelId((prev) => {
+          const existing = prev[event.channel] || [];
+          return {
+            ...prev,
+            [event.channel]: decorateMessages(existing.filter((message) => message.id !== event.message_id)),
+          };
+        });
+        setPinnedByChannelId((prev) => {
+          const existing = prev[event.channel] || [];
+          if (!existing.includes(event.message_id)) return prev;
+          return { ...prev, [event.channel]: existing.filter((id) => id !== event.message_id) };
+        });
+        setReplyingTo((prev) => (prev?.id === event.message_id ? null : prev));
       }
 
       if (event.type === "trigger_state_change" && event.trigger_id) {
@@ -506,10 +595,23 @@ export default function ChannelShell() {
             // Update existing approval message
             const updated = [...existing];
             updated[idx] = approvalMsg;
-            return { ...prev, [approvalChannel]: updated };
+            return { ...prev, [approvalChannel]: decorateMessages(updated) };
           }
           // Add new approval message
-          return { ...prev, [approvalChannel]: [...existing, approvalMsg] };
+          return { ...prev, [approvalChannel]: decorateMessages([...existing, approvalMsg]) };
+        });
+      }
+
+      if (event.type === "job_updated" && event.job) {
+        const normalizedJob = normalizeJobs([event.job])[0];
+        if (!normalizedJob?.channel) return;
+        setJobsByChannelId((prev) => {
+          const existing = prev[normalizedJob.channel] || [];
+          const next = existing.filter((job) => job.id !== normalizedJob.id);
+          return {
+            ...prev,
+            [normalizedJob.channel]: [normalizedJob, ...next],
+          };
         });
       }
     }
@@ -522,6 +624,22 @@ export default function ChannelShell() {
     () => (activeChannelId ? messagesByChannelId[activeChannelId] || [] : []),
     [activeChannelId, messagesByChannelId],
   );
+  const activeJobs = useMemo(
+    () => (activeChannelId ? jobsByChannelId[activeChannelId] || [] : []),
+    [activeChannelId, jobsByChannelId],
+  );
+  const pinnedMessages = useMemo(() => {
+    if (!activeChannelId) return [];
+    const pinnedIds = pinnedByChannelId[activeChannelId] || [];
+    return pinnedIds
+      .map((id) => activeMessages.find((message) => message.id === id))
+      .filter(Boolean)
+      .map((message) => ({
+        id: message.id,
+        sender: message.sender,
+        text: String(message.content || message.text || "").slice(0, 140),
+      }));
+  }, [activeChannelId, activeMessages, pinnedByChannelId]);
   const triggerSummary = useMemo(() => summarizeTriggers(triggers), [triggers]);
   const openByAgent = useMemo(() => computeOpenByAgent(triggers), [triggers]);
   const mergedAgents = useMemo(() => mergeRuntimeAgents(agents, openByAgent), [agents, openByAgent]);
@@ -582,6 +700,69 @@ export default function ChannelShell() {
     } catch (err) {
       console.error("Failed to deny tool request:", err);
     }
+  }, []);
+
+  const handleReplyToMessage = useCallback((message) => {
+    setReplyingTo(message);
+  }, []);
+
+  const handleTogglePinMessage = useCallback((message) => {
+    if (!message?.id || !activeChannelId) return;
+    setPinnedByChannelId((prev) => {
+      const existing = prev[activeChannelId] || [];
+      const next = existing.includes(message.id)
+        ? existing.filter((id) => id !== message.id)
+        : [message.id, ...existing];
+      return { ...prev, [activeChannelId]: next };
+    });
+  }, [activeChannelId]);
+
+  const handleDeleteMessage = useCallback(async (message) => {
+    if (!message?.id || !activeChannelId) return;
+    try {
+      await deleteChannelMessage(message.id);
+      setMessagesByChannelId((prev) => ({
+        ...prev,
+        [activeChannelId]: decorateMessages((prev[activeChannelId] || []).filter((item) => item.id !== message.id)),
+      }));
+      setPinnedByChannelId((prev) => ({
+        ...prev,
+        [activeChannelId]: (prev[activeChannelId] || []).filter((id) => id !== message.id),
+      }));
+      if (replyingTo?.id === message.id) {
+        setReplyingTo(null);
+      }
+    } catch (err) {
+      console.error("Failed to delete message:", err);
+    }
+  }, [activeChannelId, replyingTo]);
+
+  const handleConvertMessageToJob = useCallback(async (message) => {
+    if (!message || !activeChannelId) return;
+    const sourceText = String(message.content || message.text || "").trim();
+    if (!sourceText) return;
+    const title = sourceText.split("\n")[0].slice(0, 80) || "New job";
+    try {
+      const created = await createJob({
+        title,
+        body: sourceText,
+        channel: activeChannelId,
+        created_by: "human",
+      });
+      setJobsByChannelId((prev) => ({
+        ...prev,
+        [activeChannelId]: [normalizeJobs([created])[0], ...(prev[activeChannelId] || [])],
+      }));
+      setActivePanel("jobs");
+    } catch (err) {
+      console.error("Failed to create job from message:", err);
+    }
+  }, [activeChannelId]);
+
+  const handleReplyJump = useCallback((messageId) => {
+    if (!messageId) return;
+    const target = document.getElementById(`message-${messageId}`);
+    target?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, []);
 
   const onCreate = async (payload) => {
@@ -720,8 +901,14 @@ export default function ChannelShell() {
     if (!activeChannelId) {
       return Promise.reject(new Error("No active channel selected"));
     }
-    return sendChannelMessage({ channelId: activeChannelId, text, sender: "human" })
+    return sendChannelMessage({
+      channelId: activeChannelId,
+      text,
+      sender: "human",
+      replyTo: replyingTo?.id || null,
+    })
       .then(async () => {
+        setReplyingTo(null);
         const targets = extractMentionTargets(
           text,
           mergedAgents.map((agent) => agent.agent_type),
@@ -784,7 +971,7 @@ export default function ChannelShell() {
           />
         );
       case "jobs":
-        return <JobsPanel open onClose={() => setActivePanel(null)} />;
+        return <JobsPanel open onClose={() => setActivePanel(null)} jobs={activeJobs} />;
       case "rules":
         return <RulesPanel open onClose={() => setActivePanel(null)} />;
       case "settings":
@@ -801,6 +988,7 @@ export default function ChannelShell() {
           <Sidebar
             channels={channels}
             repos={reposWithActive}
+            pinnedMessages={pinnedMessages}
             activeChannel={activeChannelId}
             onSelectChannel={setActiveChannelId}
             onCreateChannel={() => setCreateOpen(true)}
@@ -838,6 +1026,12 @@ export default function ChannelShell() {
           channelName={showChannel?.name}
           onApprove={handleApproveToolRequest}
           onDeny={handleDenyToolRequest}
+          onReply={handleReplyToMessage}
+          onDelete={handleDeleteMessage}
+          onPin={handleTogglePinMessage}
+          onConvertToJob={handleConvertMessageToJob}
+          onReplyJump={handleReplyJump}
+          pinnedMessageIds={activeChannelId ? pinnedByChannelId[activeChannelId] || [] : []}
         />
 
         <AgentThinkingStrip
@@ -848,6 +1042,8 @@ export default function ChannelShell() {
         <Composer
           onSendMessage={onSend}
           onSchedule={() => setScheduleModalOpen(true)}
+          replyMessage={replyingTo}
+          onCancelReply={() => setReplyingTo(null)}
         />
       </AppShell>
 
