@@ -34,6 +34,22 @@ def test_send_message(client, channel_id):
     assert data["delivery"] is None
 
 
+def test_send_message_with_reply_to(client, channel_id):
+    original = client.post("/api/messages", json={
+        "text": "hello world",
+        "channel": channel_id,
+        "sender": "human",
+    })
+    resp = client.post("/api/messages", json={
+        "text": "reply",
+        "channel": channel_id,
+        "sender": "human",
+        "reply_to": original.json()["id"],
+    })
+    assert resp.status_code == 201
+    assert resp.json()["reply_to"] == original.json()["id"]
+
+
 def test_send_message_with_mention(client, channel_id):
     resp = client.post("/api/messages", json={
         "text": "@claude review this",
@@ -86,6 +102,17 @@ def test_list_messages_with_after(client, channel_id):
     })
     assert resp.status_code == 200
     assert len(resp.json()) == 1
+
+
+def test_delete_message(client, channel_id):
+    created = client.post("/api/messages", json={
+        "text": "delete me", "channel": channel_id, "sender": "human"
+    })
+    msg_id = created.json()["id"]
+    delete_resp = client.delete(f"/api/messages/{msg_id}")
+    assert delete_resp.status_code == 204
+    list_resp = client.get("/api/messages", params={"channel": channel_id})
+    assert all(message["id"] != msg_id for message in list_resp.json())
 
 
 # --- POST /api/messages/{id}/seen ---

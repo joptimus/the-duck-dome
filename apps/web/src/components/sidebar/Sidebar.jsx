@@ -9,6 +9,7 @@ import styles from './Sidebar.module.css';
 export function Sidebar({
   channels,
   repos,
+  pinnedMessages = [],
   activeChannel,
   onSelectChannel,
   onCreateChannel,
@@ -53,7 +54,18 @@ export function Sidebar({
           <span className={styles.pinnedLabel}>Pinned</span>
         </div>
         {pinnedOpen && (
-          <div className={styles.pinnedEmpty}>No pinned messages</div>
+          pinnedMessages.length > 0 ? (
+            <div className={styles.pinnedList}>
+              {pinnedMessages.map((message) => (
+                <div key={message.id} className={styles.pinnedItem}>
+                  <div className={styles.pinnedSender}>{message.sender}</div>
+                  <div className={styles.pinnedText}>{message.text}</div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className={styles.pinnedEmpty}>No pinned messages</div>
+          )
         )}
       </div>
 

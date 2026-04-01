@@ -34,6 +34,7 @@ class Message(BaseModel):
     text: str
     channel: str
     sender: str
+    reply_to: str | None = None
     type: MessageType = MessageType.CHAT
     subtype: str | None = None
     agent: str | None = None

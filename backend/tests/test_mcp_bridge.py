@@ -168,6 +168,19 @@ def test_chat_join_accepts_legacy_name_argument(bridge, stores, channel_id):
     assert messages[-1].sender == "claude"
 
 
+def test_chat_join_accepts_channel_id_alias(bridge, stores, channel_id):
+    tool_map = {t.name: t.fn for t in bridge.mcp._tool_manager.list_tools()}
+    chat_join = tool_map["chat_join"]
+    message_store, _, _ = stores
+
+    assert chat_join(channel_id=channel_id, agent_type="claude").startswith("Joined")
+    assert tool_map["chat_send"](message="joined via channel_id", sender="claude").startswith("Sent")
+
+    messages = message_store.list_by_channel(channel_id)
+    assert messages[-1].text == "joined via channel_id"
+    assert messages[-1].sender == "claude"
+
+
 def test_chat_read_accepts_legacy_sender_argument(bridge, stores, channel_id):
     tool_map = {t.name: t.fn for t in bridge.mcp._tool_manager.list_tools()}
     chat_read = tool_map["chat_read"]

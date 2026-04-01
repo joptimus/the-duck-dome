@@ -69,8 +69,8 @@ def _resolve_inject_delay(agent_type: str) -> float:
     - Other agents keep DuckDome's faster default delay.
     """
     if agent_type == "codex":
-        return 0.3
-    return 0.01
+        return 0.4
+    return 0.03
 
 
 def _resolve_cmd_shim(cmd: list[str]) -> list[str]:
@@ -186,7 +186,10 @@ def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: s
         prompt = (
             "DuckDome MCP is already configured in this session under the server name "
             '"duckdome". Use the DuckDome MCP chat tools for this task. '
-            f'Join channel "{normalized_channel}", read the latest messages there, '
+            f'First call chat_join(channel="{normalized_channel}", agent_type="claude"). '
+            "Do not use channel_id for chat_join; the MCP argument name is channel. "
+            "Then call chat_read(channel="
+            f'"{normalized_channel}") to read the latest messages there, '
             "take appropriate action, and reply in that same DuckDome channel. "
             "Do not treat this as a generic MCP resource lookup. "
             "Do not inspect ~/.claude settings, .mcp.json files, or other local config files. "
@@ -227,16 +230,49 @@ def _open_agent_terminal(tmux_session: str) -> None:
     """
     if sys.platform != "darwin":
         return
-    attach_cmd = f"tmux attach-session -t {tmux_session}"
+    marker = f"DuckDome:{tmux_session}"
+    # Tag the tab title with a DuckDome marker so we can close only windows
+    # opened by DuckDome during shutdown.
+    attach_cmd = (
+        f"printf '\\033]0;{marker}\\007'; "
+        f"tmux attach-session -t {shlex.quote(tmux_session)}; "
+        "exit"
+    )
     # Tell Terminal.app to open a new window running the attach command.
     # The window title will show the session name; closing the window leaves
     # the tmux session (and the agent) running in the background.
     # AppleScript requires double-quoted strings; shlex single-quotes are invalid.
-    script = f'tell application "Terminal" to do script "{attach_cmd}"'
+    # Use JSON string quoting so backslashes/quotes in the shell command don't
+    # break AppleScript parsing (for example with ANSI escape sequences).
+    script = f"tell application \"Terminal\" to do script {json.dumps(attach_cmd)}"
     try:
         subprocess.Popen(["osascript", "-e", script])
     except Exception:
         logger.warning("[%s] could not open Terminal.app window", tmux_session)
+
+
+def _close_agent_terminal(tmux_session: str) -> None:
+    """Close Terminal.app windows opened for a DuckDome tmux session."""
+    if sys.platform != "darwin":
+        return
+    marker = f"DuckDome:{tmux_session}"
+    script = f'''
+tell application "Terminal"
+  repeat with w in windows
+    try
+      set t to selected tab of w
+      set tabName to name of t
+      if tabName contains "{marker}" then
+        close t
+      end if
+    end try
+  end repeat
+end tell
+'''
+    try:
+        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=3)
+    except Exception:
+        logger.warning("[%s] could not close Terminal.app window", tmux_session)
 
 
 @dataclass
@@ -253,7 +289,7 @@ class AgentProcess:
     stop_event: threading.Event = field(default_factory=threading.Event)
     ready_event: threading.Event = field(default_factory=threading.Event)
     started_at: float | None = None
-    inject_delay: float = 0.01
+    inject_delay: float = 0.03
     presence_channel: str | None = None
 
 
@@ -513,6 +549,7 @@ class AgentProcessManager:
             subprocess.run(
                 ["tmux", "kill-session", "-t", agent_proc.tmux_session], capture_output=True
             )
+            _close_agent_terminal(agent_proc.tmux_session)
         elif agent_proc.proc and agent_proc.proc.poll() is None:
             logger.info("[%s] terminating pid=%d", agent_type, agent_proc.pid)
             agent_proc.proc.terminate()

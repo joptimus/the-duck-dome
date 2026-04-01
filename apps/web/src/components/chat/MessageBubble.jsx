@@ -1,13 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
-import remarkGfm from 'remark-gfm';
 import { agentMeta } from '../../constants/agents';
 import { AgentLogo, BoltIcon } from '../icons';
 import { StatusTag } from '../primitives';
+import { MessageContent } from './MessageContent';
 import { MessageToolbar } from './MessageToolbar';
 import styles from './MessageBubble.module.css';
 
-const MENTION_PATTERN = /(^|[\s(])(@[a-z0-9_-]+)/gi;
 const INLINE_CODE_PATTERN = /(`[^`]+`)/g;
 const ROLE_OPTIONS = ['None', 'Planner', 'Designer', 'Architect', 'Builder', 'Reviewer', 'Researcher', 'Red Team', 'Wry', 'Unhinged', 'Hype'];
 const UNKNOWN_AGENT_META = {
@@ -16,55 +14,6 @@ const UNKNOWN_AGENT_META = {
   bg: 'rgba(255,255,255,0.03)',
   border: 'rgba(255,255,255,0.14)',
 };
-
-function splitTextIntoMentionNodes(value) {
-  const nodes = [];
-  let lastIndex = 0;
-
-  value.replaceAll(MENTION_PATTERN, (match, prefix, mention, offset) => {
-    if (offset > lastIndex) {
-      nodes.push({ type: 'text', value: value.slice(lastIndex, offset) });
-    }
-    if (prefix) {
-      nodes.push({ type: 'text', value: prefix });
-    }
-    nodes.push({
-      type: 'link',
-      url: `mention:${mention.slice(1).toLowerCase()}`,
-      children: [{ type: 'text', value: mention }],
-    });
-    lastIndex = offset + match.length;
-    return match;
-  });
-
-  if (lastIndex < value.length) {
-    nodes.push({ type: 'text', value: value.slice(lastIndex) });
-  }
-
-  return nodes.length > 0 ? nodes : [{ type: 'text', value }];
-}
-
-function transformMentionNodes(node) {
-  if (!node || typeof node !== 'object') return;
-  if (!Array.isArray(node.children)) return;
-
-  const nextChildren = [];
-  for (const child of node.children) {
-    if (child?.type === 'text' && typeof child.value === 'string' && child.value.includes('@')) {
-      nextChildren.push(...splitTextIntoMentionNodes(child.value));
-      continue;
-    }
-    transformMentionNodes(child);
-    nextChildren.push(child);
-  }
-  node.children = nextChildren;
-}
-
-function remarkMentions() {
-  return (tree) => {
-    transformMentionNodes(tree);
-  };
-}
 
 function splitDetailSegments(detail) {
   return String(detail || '')
@@ -125,7 +74,16 @@ function RoleDropdown({ selectedRole = '', onSelect, onClose }) {
   );
 }
 
-export function MessageBubble({ message, index = 0 }) {
+export function MessageBubble({
+  message,
+  index = 0,
+  onReply,
+  onDelete,
+  onPin,
+  onConvertToJob,
+  onReplyJump,
+  isPinned = false,
+}) {
   const [hovered, setHovered] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
   const [selectedRole, setSelectedRole] = useState('');
@@ -143,7 +101,7 @@ export function MessageBubble({ message, index = 0 }) {
   const normalizedText = message.content || message.text || '';
   const timestamp = message.time || message.timestamp || '--';
   const details = Array.isArray(message.details) ? message.details : [];
-  const showControls = !isUser && (hovered || roleOpen);
+  const showControls = hovered || roleOpen;
 
   useEffect(() => {
     if (!isUnknownAgent || import.meta.env.PROD) return;
@@ -166,6 +124,7 @@ export function MessageBubble({ message, index = 0 }) {
 
   return (
     <div
+      id={`message-${message.id}`}
       ref={rowRef}
       className={`${styles.row} ${isUser ? styles.rowUser : ''}`}
       style={{ animation: `fadeUp 0.3s ease ${index * 0.06}s both` }}
@@ -202,7 +161,7 @@ export function MessageBubble({ message, index = 0 }) {
               <span className={styles.name} style={{ color: meta?.color }}>{displayName}</span>
               <StatusTag status={message.status} />
               <span className={styles.timestamp}>{timestamp}</span>
-              {showControls && (
+              {!isUser && showControls && (
                 <div className={styles.roleWrap}>
                   <button
                     type="button"
@@ -226,39 +185,11 @@ export function MessageBubble({ message, index = 0 }) {
           )}
         </div>
 
-        <div className={styles.body}>
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm, remarkMentions]}
-            urlTransform={(url) => (typeof url === 'string' && url.startsWith('mention:') ? url : defaultUrlTransform(url))}
-            components={{
-              a: ({ href, children, ...props }) => {
-                if (typeof href === 'string' && href.startsWith('mention:')) {
-                  return (
-                    <span {...props} className={styles.mention}>
-                      {children}
-                    </span>
-                  );
-                }
-                return <a href={href} {...props} target="_blank" rel="noreferrer" className={styles.link} />;
-              },
-              code: ({ node, className, children, ...props }) => {
-                const isBlockCode = node?.tagName === 'code' && node?.parent?.tagName === 'pre';
-                return isBlockCode ? (
-                  <code {...props} className={`${styles.codeBlock} ${className || ''}`.trim()}>{children}</code>
-                ) : (
-                  <code {...props} className={styles.inlineCode}>{children}</code>
-                );
-              },
-              pre: ({ children }) => <pre className={styles.pre}>{children}</pre>,
-              p: ({ children }) => <p className={styles.paragraph}>{children}</p>,
-              ul: ({ children }) => <ul className={styles.list}>{children}</ul>,
-              ol: ({ children }) => <ol className={styles.list}>{children}</ol>,
-              blockquote: ({ children }) => <blockquote className={styles.blockquote}>{children}</blockquote>,
-            }}
-          >
-            {normalizedText}
-          </ReactMarkdown>
-        </div>
+        <MessageContent
+          text={normalizedText}
+          replyPreview={message.reply_preview || null}
+          onReplyClick={onReplyJump}
+        />
 
         {!isUser && details.length > 0 && (
           <div className={styles.details}>
@@ -286,14 +217,17 @@ export function MessageBubble({ message, index = 0 }) {
           </div>
         )}
 
-        {!isUser && (
-          <MessageToolbar
-            visible={showControls}
-            roleOpen={roleOpen}
-            agentColor={meta?.color || 'var(--text-muted)'}
-            messageText={normalizedText}
-          />
-        )}
+        <MessageToolbar
+          visible={showControls}
+          roleOpen={roleOpen}
+          agentColor={meta?.color || 'var(--text-muted)'}
+          messageText={normalizedText}
+          pinned={isPinned}
+          onReply={() => onReply?.(message)}
+          onPin={() => onPin?.(message)}
+          onConvertToJob={() => onConvertToJob?.(message)}
+          onDelete={() => onDelete?.(message)}
+        />
       </div>
     </div>
   );
