@@ -113,7 +113,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         message_store=message_store,
     )
 
-    wrapper_service = WrapperService(data_dir=data_dir)
+    wrapper_service = WrapperService(
+        data_dir=data_dir,
+        tool_approval_service=tool_approval_service,
+    )
 
     # Init routes with dependencies
     messages_mod.init(message_service)

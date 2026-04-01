@@ -21,6 +21,7 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from duckdome.wrapper.console_monitor import ConsoleMonitor
 from duckdome.wrapper.injector import inject
 from duckdome.wrapper.mcp_config import generate_agent_token, generate_gemini_settings, generate_mcp_config
 from duckdome.wrapper.mcp_proxy import McpProxy
@@ -293,6 +294,7 @@ class AgentProcess:
     started_at: float | None = None
     inject_delay: float = 0.01
     presence_channel: str | None = None
+    console_monitor: ConsoleMonitor | None = None
 
 
 class AgentProcessManager:
@@ -304,12 +306,14 @@ class AgentProcessManager:
         mcp_port: int = 8200,
         mcp_host: str = "127.0.0.1",
         app_port: int = 8000,
+        tool_approval_service=None,
     ) -> None:
         self._data_dir = data_dir
         self._data_dir.mkdir(parents=True, exist_ok=True)
         self._config_dir = data_dir / "mcp-configs"
         self._mcp_url = f"http://{mcp_host}:{mcp_port}/mcp"
         self._app_port = app_port
+        self._tool_approval_service = tool_approval_service
         self._agents: dict[str, AgentProcess] = {}
         self._starting: set[str] = set()
         self._lock = threading.Lock()
@@ -421,6 +425,19 @@ class AgentProcessManager:
                 agent_proc.started_at = time.time()
                 agent_proc.ready_event.set()
                 logger.info("[%s] process started pid=%d", agent_type, proc.pid)
+
+                # Start console monitor for permission prompt capture (Windows)
+                if self._tool_approval_service is not None:
+                    monitor = ConsoleMonitor(
+                        pid=proc.pid,
+                        agent_type=agent_type,
+                        channel_id=agent_proc.active_channel,
+                        approval_service=self._tool_approval_service,
+                        inject_delay=agent_proc.inject_delay,
+                    )
+                    agent_proc.console_monitor = monitor
+                    monitor.start()
+
                 proc.wait()
                 logger.warning("[%s] process exited (code=%s)", agent_type, proc.returncode)
                 return True
@@ -546,6 +563,8 @@ class AgentProcessManager:
             return False
 
         agent_proc.stop_event.set()
+        if agent_proc.console_monitor:
+            agent_proc.console_monitor.stop()
         if sys.platform != "win32" and agent_proc.tmux_session:
             logger.info("[%s] killing tmux session %s", agent_type, agent_proc.tmux_session)
             subprocess.run(
@@ -739,6 +758,8 @@ class AgentProcessManager:
                 sender = entry.get("sender", "human")
                 agent_proc.active_channel = str(channel).strip() or "general"
                 agent_proc.presence_channel = agent_proc.active_channel
+                if agent_proc.console_monitor:
+                    agent_proc.console_monitor.channel_id = agent_proc.active_channel
                 injection = _build_trigger_prompt(
                     agent_type=agent_type,
                     channel=channel,
