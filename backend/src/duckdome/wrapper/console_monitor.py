@@ -90,6 +90,7 @@ class ConsoleMonitor:
         self._seen: set[str] = set()
         self._pending: dict[str, _PendingPrompt] = {}
         self._last_buffer = ""
+        self._poll_count = 0
 
     @property
     def channel_id(self) -> str:
@@ -126,13 +127,23 @@ class ConsoleMonitor:
 
     def _poll_once(self) -> None:
         # 1. Read console buffer
+        self._poll_count += 1
         buffer = _read_console_buffer(self._pid)
-        if not buffer or buffer == self._last_buffer:
+        if self._poll_count % 10 == 0:
+            logger.info("[%s] monitor heartbeat: poll=%d buf_len=%d pending=%d seen=%d",
+                        self._agent_type, self._poll_count, len(buffer), len(self._pending), len(self._seen))
+        if not buffer:
+            logger.warning("[%s] console buffer empty (pid=%d)", self._agent_type, self._pid)
             self._check_pending_resolutions()
             return
-        self._last_buffer = buffer
 
-        # 2. Check for permission prompts
+        changed = buffer != self._last_buffer
+        if changed:
+            preview = buffer[-300:].replace("\n", "\\n")
+            logger.info("[%s] console buffer changed (pid=%d): ...%s", self._agent_type, self._pid, preview)
+            self._last_buffer = buffer
+
+        # 2. Always check for permission prompts (TUI apps redraw in place)
         match = match_permission_prompt(buffer, self._agent_type)
         if match and match.fingerprint not in self._seen:
             self._seen.add(match.fingerprint)

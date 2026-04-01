@@ -185,22 +185,14 @@ def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: s
 
     if agent_type == "claude":
         prompt = (
-            "DuckDome MCP is already configured in this session under the server name "
-            '"duckdome". Use the DuckDome MCP chat tools for this task. '
-            f'First call chat_join(channel="{normalized_channel}", agent_type="claude"). '
-            "Do not use channel_id for chat_join; the MCP argument name is channel. "
-            "Then call chat_read(channel="
-            f'"{normalized_channel}") to read the latest messages there, '
-            "take appropriate action, and reply in that same DuckDome channel. "
-            "Do not treat this as a generic MCP resource lookup. "
-            "Do not inspect ~/.claude settings, .mcp.json files, or other local config files. "
-            "Do not use curl or direct HTTP calls for DuckDome chat if the DuckDome MCP server is available. "
+            f'Use DuckDome MCP: chat_join(channel="{normalized_channel}", agent_type="claude"), '
+            f'then chat_read(channel="{normalized_channel}"). '
         )
         if normalized_text:
-            prompt += f"Request: {normalized_text} "
+            prompt += f"{normalized_sender} asks: {normalized_text} "
         else:
-            prompt += "Request text was not included. "
-        prompt += f"You were triggered by {normalized_sender}. Reply in chat when done."
+            prompt += f"Triggered by {normalized_sender}. "
+        prompt += "Do the work, then reply with chat_send."
         return prompt
 
     prompt = (
