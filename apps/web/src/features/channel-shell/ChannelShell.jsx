@@ -148,7 +148,7 @@ function formatApprovalTime(value) {
   if (value === null || value === undefined || value === "") return "--";
   const asNumber = Number(value);
   if (!Number.isFinite(asNumber)) return String(value);
-  return new Date(asNumber * 1000).toLocaleTimeString();
+  return formatClockTime(asNumber);
 }
 
 function normalizeApprovalMessages(data, channelId) {
@@ -176,7 +176,7 @@ function mergeChannelTimeline(historyMessages, approvalMessages, existingMessage
   const approvalById = new Map();
 
   for (const msg of existingMessages) {
-    if (msg.sender_type === "tool_approval") {
+    if (msg.type === "tool_approval") {
       approvalById.set(msg.id, msg);
     }
   }

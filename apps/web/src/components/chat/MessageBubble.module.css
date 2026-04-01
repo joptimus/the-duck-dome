@@ -1,4 +1,6 @@
 .row {
+  --accent-purple: #A855F7;
+  --accent-purple-rgb: 168, 85, 247;
   display: flex;
   align-items: flex-start;
   margin-bottom: 18px;
@@ -21,6 +23,10 @@
   margin-top: 2px;
 }
 
+.avatarUnknown {
+  border-style: dashed;
+}
+
 .bubble {
   position: relative;
   flex: 0 1 auto;
@@ -39,6 +45,10 @@
   min-width: 120px;
   max-width: 62%;
   border-radius: 14px 14px 4px 14px;
+}
+
+.bubbleUnknown {
+  border-style: dashed;
 }
 
 .header {
@@ -87,14 +97,14 @@
 }
 
 .roleButton:hover {
-  border-color: rgba(168, 85, 247, 0.6);
-  color: rgba(168, 85, 247, 0.9);
+  border-color: rgba(var(--accent-purple-rgb), 0.6);
+  color: rgba(var(--accent-purple-rgb), 0.9);
 }
 
 .roleButtonOpen {
-  background: rgba(168, 85, 247, 0.15);
-  border-color: rgba(168, 85, 247, 0.6);
-  color: rgba(168, 85, 247, 0.95);
+  background: rgba(var(--accent-purple-rgb), 0.15);
+  border-color: rgba(var(--accent-purple-rgb), 0.6);
+  color: rgba(var(--accent-purple-rgb), 0.95);
 }
 
 .roleDropdown {

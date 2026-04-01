@@ -9,11 +9,13 @@ import styles from './MessageBubble.module.css';
 
 const MENTION_PATTERN = /(^|[\s(])(@[a-z0-9_-]+)/gi;
 const INLINE_CODE_PATTERN = /(`[^`]+`)/g;
-
-function normalizeDisplayText(value) {
-  if (typeof value !== 'string' || value.length === 0) return value;
-  return value;
-}
+const ROLE_OPTIONS = ['None', 'Planner', 'Designer', 'Architect', 'Builder', 'Reviewer', 'Researcher', 'Red Team', 'Wry', 'Unhinged', 'Hype'];
+const UNKNOWN_AGENT_META = {
+  color: 'var(--text-muted)',
+  label: 'Unknown agent',
+  bg: 'rgba(255,255,255,0.03)',
+  border: 'rgba(255,255,255,0.14)',
+};
 
 function splitTextIntoMentionNodes(value) {
   const nodes = [];
@@ -74,23 +76,51 @@ function splitDetailSegments(detail) {
     }));
 }
 
-function RoleDropdown({ onClose }) {
-  const roles = ['None', 'Planner', 'Designer', 'Architect', 'Builder', 'Reviewer', 'Researcher', 'Red Team', 'Wry', 'Unhinged', 'Hype'];
+function RoleDropdown({ selectedRole = '', onSelect, onClose }) {
+  const [customRole, setCustomRole] = useState('');
+
+  function handleSelect(role) {
+    const nextRole = role === 'None' ? '' : role;
+    onSelect?.(nextRole);
+    onClose?.();
+  }
+
+  function handleCustomCommit() {
+    const nextRole = customRole.trim();
+    if (!nextRole) return;
+    onSelect?.(nextRole);
+    onClose?.();
+  }
+
   return (
     <div className={styles.roleDropdown}>
       <div className={styles.roleGrid}>
-        {roles.map((role) => (
+        {ROLE_OPTIONS.map((role) => {
+          const isActive = (role === 'None' && !selectedRole) || role === selectedRole;
+          return (
           <button
             key={role}
             type="button"
-            className={`${styles.rolePill} ${role === 'None' ? styles.rolePillActive : ''}`}
-            onClick={onClose}
+            className={`${styles.rolePill} ${isActive ? styles.rolePillActive : ''}`}
+            onClick={() => handleSelect(role)}
           >
             {role}
           </button>
-        ))}
+          );
+        })}
       </div>
-      <input className={styles.roleInput} placeholder="Custom..." />
+      <input
+        className={styles.roleInput}
+        placeholder="Custom..."
+        value={customRole}
+        onChange={(event) => setCustomRole(event.target.value)}
+        onBlur={handleCustomCommit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            handleCustomCommit();
+          }
+        }}
+      />
     </div>
   );
 }
@@ -98,16 +128,28 @@ function RoleDropdown({ onClose }) {
 export function MessageBubble({ message, index = 0 }) {
   const [hovered, setHovered] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState('');
   const rowRef = useRef(null);
 
   const agentKey = String(message.agent || message.sender || 'user').toLowerCase();
-  const isUser = agentKey === 'user' || agentKey === 'human' || !agentMeta[agentKey];
-  const meta = isUser ? agentMeta.user : agentMeta[agentKey];
-  const displayName = isUser ? 'You' : meta?.label || String(message.sender || message.agent || '');
-  const normalizedText = normalizeDisplayText(message.content || message.text || '');
+  const isUnknownAgent = !agentMeta[agentKey] && agentKey !== 'user' && agentKey !== 'human';
+  const isUser = agentKey === 'user' || agentKey === 'human';
+  const meta = isUser ? agentMeta.user : agentMeta[agentKey] || UNKNOWN_AGENT_META;
+  const displayName = isUser
+    ? 'You'
+    : isUnknownAgent
+      ? String(message.sender || message.agent || UNKNOWN_AGENT_META.label)
+      : meta?.label || String(message.sender || message.agent || '');
+  const normalizedText = message.content || message.text || '';
   const timestamp = message.time || message.timestamp || '--';
   const details = Array.isArray(message.details) ? message.details : [];
   const showControls = !isUser && (hovered || roleOpen);
+
+  useEffect(() => {
+    if (!isUnknownAgent || import.meta.env.PROD) return;
+    // Unknown agent messages should stay visible instead of silently rendering as user messages.
+    console.warn('Missing agent metadata for message bubble agent', { agentKey, message });
+  }, [agentKey, isUnknownAgent, message]);
 
   useEffect(() => {
     if (!roleOpen) return undefined;
@@ -130,7 +172,7 @@ export function MessageBubble({ message, index = 0 }) {
     >
       {!isUser && (
         <div
-          className={styles.avatar}
+          className={`${styles.avatar} ${isUnknownAgent ? styles.avatarUnknown : ''}`}
           style={{
             background: `${meta.color}26`,
             borderColor: `${meta.color}80`,
@@ -141,7 +183,7 @@ export function MessageBubble({ message, index = 0 }) {
       )}
 
       <div
-        className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent}`}
+        className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent} ${isUnknownAgent ? styles.bubbleUnknown : ''}`}
         style={{
           background: meta?.bg,
           borderColor: hovered || roleOpen ? `${meta?.color}66` : meta?.border,
@@ -167,9 +209,15 @@ export function MessageBubble({ message, index = 0 }) {
                     className={`${styles.roleButton} ${roleOpen ? styles.roleButtonOpen : ''}`}
                     onClick={() => setRoleOpen((value) => !value)}
                   >
-                    choose a role
+                    {selectedRole || 'choose a role'}
                   </button>
-                  {roleOpen && <RoleDropdown onClose={() => setRoleOpen(false)} />}
+                  {roleOpen && (
+                    <RoleDropdown
+                      selectedRole={selectedRole}
+                      onSelect={setSelectedRole}
+                      onClose={() => setRoleOpen(false)}
+                    />
+                  )}
                 </div>
               )}
             </>
@@ -193,12 +241,14 @@ export function MessageBubble({ message, index = 0 }) {
                 }
                 return <a href={href} {...props} target="_blank" rel="noreferrer" className={styles.link} />;
               },
-              code: ({ inline, className, children, ...props }) =>
-                inline ? (
-                  <code {...props} className={styles.inlineCode}>{children}</code>
-                ) : (
+              code: ({ node, className, children, ...props }) => {
+                const isBlockCode = node?.tagName === 'code' && node?.parent?.tagName === 'pre';
+                return isBlockCode ? (
                   <code {...props} className={`${styles.codeBlock} ${className || ''}`.trim()}>{children}</code>
-                ),
+                ) : (
+                  <code {...props} className={styles.inlineCode}>{children}</code>
+                );
+              },
               pre: ({ children }) => <pre className={styles.pre}>{children}</pre>,
               p: ({ children }) => <p className={styles.paragraph}>{children}</p>,
               ul: ({ children }) => <ul className={styles.list}>{children}</ul>,
@@ -248,4 +298,3 @@ export function MessageBubble({ message, index = 0 }) {
     </div>
   );
 }
-

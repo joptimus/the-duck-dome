@@ -19,6 +19,9 @@ export function MessageToolbar({ visible, roleOpen = false, agentColor, messageT
   }, [copied]);
 
   const isVisible = visible || roleOpen;
+  const borderTopColor = typeof agentColor === 'string' && agentColor.startsWith('var(')
+    ? agentColor
+    : `${agentColor}2e`;
 
   const handleCopy = async () => {
     try {
@@ -35,12 +38,12 @@ export function MessageToolbar({ visible, roleOpen = false, agentColor, messageT
   return (
     <div
       className={`${styles.toolbar} ${isVisible ? styles.toolbarVisible : ''}`}
-      style={{ borderTopColor: `${agentColor}2e` }}
+      style={{ borderTopColor }}
     >
-      <button className={styles.btn} title="Reply" type="button" aria-label="Reply">
+      <button className={styles.btn} title="Reply unavailable" type="button" aria-label="Reply" disabled>
         <ReplyIcon size={13} color="currentColor" />
       </button>
-      <button className={styles.btn} title="Pin" type="button" aria-label="Pin">
+      <button className={styles.btn} title="Pin unavailable" type="button" aria-label="Pin" disabled>
         <PinIcon size={13} color="currentColor" />
       </button>
       <button
@@ -53,11 +56,11 @@ export function MessageToolbar({ visible, roleOpen = false, agentColor, messageT
         {copied ? <CheckIcon size={13} color="currentColor" /> : <CopyIcon size={13} color="currentColor" />}
         {copied && <div className={styles.tooltip}>Copied!</div>}
       </button>
-      <button className={styles.btn} title="Convert to Job" type="button" aria-label="Convert to Job">
+      <button className={styles.btn} title="Convert to Job unavailable" type="button" aria-label="Convert to Job" disabled>
         <BoltIcon size={11} color="currentColor" glow={false} />
       </button>
       <div className={styles.spacer} />
-      <button className={`${styles.btn} ${styles.btnDelete}`} title="Delete" type="button" aria-label="Delete">
+      <button className={`${styles.btn} ${styles.btnDelete}`} title="Delete unavailable" type="button" aria-label="Delete" disabled>
         <TrashIcon size={13} color="currentColor" />
       </button>
     </div>
