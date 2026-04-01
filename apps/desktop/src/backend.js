@@ -60,6 +60,7 @@ function stopBackend() {
       try {
         proc.kill("SIGKILL");
       } catch {}
+      finish();
     }, BACKEND_STOP_TIMEOUT_MS);
 
     proc.once("exit", () => {
@@ -68,7 +69,11 @@ function stopBackend() {
     });
 
     try {
-      proc.kill("SIGINT");
+      const sent = proc.kill("SIGINT");
+      if (!sent) {
+        clearTimeout(timeout);
+        finish();
+      }
     } catch {
       clearTimeout(timeout);
       finish();

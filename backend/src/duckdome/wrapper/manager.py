@@ -260,11 +260,12 @@ def _close_agent_terminal(tmux_session: str) -> None:
 tell application "Terminal"
   repeat with w in windows
     try
-      set t to selected tab of w
-      set tabName to name of t
-      if tabName contains "{marker}" then
-        close t
-      end if
+      repeat with t in tabs of w
+        set tabName to name of t
+        if tabName contains "{marker}" then
+          close t
+        end if
+      end repeat
     end try
   end repeat
 end tell
