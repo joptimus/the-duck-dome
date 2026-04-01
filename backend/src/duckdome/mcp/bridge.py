@@ -61,11 +61,21 @@ class McpBridge:
         return self._mcp
 
     def _register_tools(self) -> None:
-        def _identity_or_error(ctx: Any | None) -> tuple[str, str] | tuple[None, str]:
-            identity = self._identity_store.get(ctx)
-            if identity is None:
-                return None, "Error: Agent not registered. Call chat_join first."
-            return identity.agent_type, identity.channel
+        def _identity_or_error(ctx: Any | None, channel: str = "", sender: str = "") -> tuple[str, str] | tuple[None, str]:
+            """Resolve agent identity from sender, channel, or session."""
+            s = sender.strip().lower()
+            ch = channel.strip()
+            # Try explicit sender + channel
+            if s:
+                identity = self._identity_store.get_by_agent(s, ch)
+                if identity:
+                    return identity.agent_type, ch or identity.channel
+            # Try finding any agent for this channel
+            if ch:
+                identity = self._identity_store.find_by_channel(ch)
+                if identity:
+                    return identity.agent_type, identity.channel
+            return None, "Error: Agent not registered. Call chat_join first."
 
         def _resolve_join_identity(
             *,
@@ -86,20 +96,31 @@ class McpBridge:
             channel: str,
             sender: str = "",
         ) -> tuple[str | None, str | None]:
-            identity = self._identity_store.get(ctx)
-            if identity is not None:
-                effective_channel = channel.strip() if channel.strip() else identity.channel
-                return identity.agent_type, effective_channel
-            sender_name = sender.strip().lower()
-            if not sender_name:
-                return None, "Error: Agent not registered. Call chat_join first."
-            effective_channel = channel.strip() if channel.strip() else "general"
-            self._identity_store.set(ctx, channel=effective_channel, agent_type=sender_name)
-            try:
-                self._trigger_service.register_agent(channel_id=effective_channel, agent_type=sender_name)
-            except (ValueError, Exception):
-                pass  # best-effort — don't block the tool call
-            return sender_name, effective_channel
+            s = sender.strip().lower()
+            ch = channel.strip()
+
+            # 1. Explicit sender — proxy-injected (Codex) or passed directly
+            if s:
+                identity = self._identity_store.get_by_agent(s, ch)
+                if identity is not None:
+                    effective_channel = ch or identity.channel
+                    return identity.agent_type, effective_channel
+                # Sender known but no prior chat_join — register on the fly.
+                effective_channel = ch or "general"
+                self._identity_store.set(ctx, channel=effective_channel, agent_type=s)
+                try:
+                    self._trigger_service.register_agent(channel_id=effective_channel, agent_type=s)
+                except (ValueError, Exception):
+                    pass
+                return s, effective_channel
+
+            # 2. No sender — look up by channel (Claude direct connection)
+            if ch:
+                identity = self._identity_store.find_by_channel(ch)
+                if identity is not None:
+                    return identity.agent_type, identity.channel
+
+            return None, "Error: Agent not registered. Call chat_join first."
 
         @self._mcp.tool()
         def chat_join(

@@ -116,15 +116,16 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     wrapper_service = WrapperService(
         data_dir=data_dir,
         tool_approval_service=tool_approval_service,
+        ws_manager=ws_manager,
     )
 
     # Init routes with dependencies
     messages_mod.init(message_service)
     deliveries_mod.init(message_service)
-    channels_mod.init(channel_service)
+    channels_mod.init(channel_service, wrapper_service=wrapper_service)
     triggers_mod.init(trigger_service)
     runners_mod.init(runner_service)
-    wrapper_mod.init(wrapper_service)
+    wrapper_mod.init(wrapper_service, channel_service=channel_service)
     tool_approvals_mod.init(tool_approval_service)
     rules_mod.init(rule_service)
     jobs_mod.init(job_service)

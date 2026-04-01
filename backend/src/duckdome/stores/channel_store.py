@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import threading
 from pathlib import Path
 
 from duckdome.models.channel import AgentInstance, Channel
@@ -17,6 +18,7 @@ class ChannelStore(BaseChannelStore):
         self._channels: dict[str, Channel] = {}
         self._channel_order: list[str] = []
         self._agents: dict[str, AgentInstance] = {}
+        self._lock = threading.Lock()
         self._load()
 
     def _load(self) -> None:
@@ -40,22 +42,24 @@ class ChannelStore(BaseChannelStore):
                     self._agents[agent.id] = agent
 
     def _save_channels(self) -> None:
-        tmp = self._channels_file.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for cid in self._channel_order:
-                f.write(self._channels[cid].model_dump_json() + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        tmp.replace(self._channels_file)
+        with self._lock:
+            tmp = self._channels_file.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                for cid in self._channel_order:
+                    f.write(self._channels[cid].model_dump_json() + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            tmp.replace(self._channels_file)
 
     def _save_agents(self) -> None:
-        tmp = self._agents_file.with_suffix(".tmp")
-        with open(tmp, "w", encoding="utf-8") as f:
-            for agent in self._agents.values():
-                f.write(agent.model_dump_json() + "\n")
-            f.flush()
-            os.fsync(f.fileno())
-        tmp.replace(self._agents_file)
+        with self._lock:
+            tmp = self._agents_file.with_suffix(".tmp")
+            with open(tmp, "w", encoding="utf-8") as f:
+                for agent in self._agents.values():
+                    f.write(agent.model_dump_json() + "\n")
+                f.flush()
+                os.fsync(f.fileno())
+            tmp.replace(self._agents_file)
 
     def add_channel(self, channel: Channel) -> Channel:
         if channel.id in self._channels:

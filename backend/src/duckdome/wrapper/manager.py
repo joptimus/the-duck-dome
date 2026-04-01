@@ -70,8 +70,8 @@ def _resolve_inject_delay(agent_type: str) -> float:
     - Other agents keep DuckDome's faster default delay.
     """
     if agent_type == "codex":
-        return 0.4
-    return 0.03
+        return 1.5
+    return 0.05
 
 
 def _resolve_cmd_shim(cmd: list[str]) -> list[str]:
@@ -187,6 +187,7 @@ def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: s
         prompt = (
             f'Use DuckDome MCP: chat_join(channel="{normalized_channel}", agent_type="claude"), '
             f'then chat_read(channel="{normalized_channel}"). '
+            f'Always pass sender="claude" in chat_send and chat_read calls. '
         )
         if normalized_text:
             prompt += f"{normalized_sender} asks: {normalized_text} "
@@ -300,6 +301,7 @@ class AgentProcessManager:
         mcp_host: str = "127.0.0.1",
         app_port: int = 8000,
         tool_approval_service=None,
+        ws_manager=None,
     ) -> None:
         self._data_dir = data_dir
         self._data_dir.mkdir(parents=True, exist_ok=True)
@@ -307,14 +309,20 @@ class AgentProcessManager:
         self._mcp_url = f"http://{mcp_host}:{mcp_port}/mcp"
         self._app_port = app_port
         self._tool_approval_service = tool_approval_service
+        self._ws_manager = ws_manager
         self._agents: dict[str, AgentProcess] = {}
         self._starting: set[str] = set()
         self._lock = threading.Lock()
 
     @staticmethod
     def _agent_key(agent_type: str, channel_id: str = "") -> str:
-        """Build the dict key for an agent process."""
-        return f"{agent_type}:{channel_id}" if channel_id else agent_type
+        """Build the dict key for an agent process.
+
+        Uses ``--`` as separator instead of ``:`` because colons are
+        illegal in Windows file paths and the key is also used as the
+        queue file name.
+        """
+        return f"{agent_type}--{channel_id}" if channel_id else agent_type
 
     def start_agent(
         self,
@@ -597,8 +605,8 @@ class AgentProcessManager:
         with self._lock:
             keys = list(self._agents.keys())
         for key in keys:
-            # Keys are "agent_type:channel_id" or just "agent_type"
-            parts = key.split(":", 1)
+            # Keys are "agent_type--channel_id" or just "agent_type"
+            parts = key.split("--", 1)
             self.stop_agent(parts[0], parts[1] if len(parts) > 1 else "")
 
     def is_running(self, agent_type: str, channel_id: str = "") -> bool:
@@ -631,12 +639,54 @@ class AgentProcessManager:
 
         key = self._agent_key(agent_type, channel)
         if not self.is_running(agent_type, channel):
-            # Auto-start a per-channel process
+            # Auto-start a per-channel process.
+            # start_agent launches threads in the background; the queue
+            # watcher will pick up the entry once ready_event fires.
             self.start_agent(agent_type, channel_id=channel)
 
-        if not self.is_running(agent_type, channel):
-            return False
         write_queue_entry(self._data_dir, key, sender, text, channel)
+
+        # Register agent in channel (triggers "joined" system message)
+        # and immediately set status to "working".
+        for endpoint in ["/api/agents/register", "/api/agents/heartbeat"]:
+            try:
+                payload = json.dumps({
+                    "channel_id": channel,
+                    "agent_type": agent_type,
+                }).encode("utf-8")
+                req = Request(
+                    self._app_url(endpoint),
+                    data=payload,
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                urlopen(req, timeout=3)
+            except Exception:
+                pass  # best effort
+
+        # Set stored status to working and broadcast.
+        try:
+            payload = json.dumps({
+                "channel_id": channel,
+                "agent_type": agent_type,
+                "status": "working",
+            }).encode("utf-8")
+            req = Request(
+                self._app_url("/api/agents/status"),
+                data=payload,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            urlopen(req, timeout=3)
+        except Exception:
+            # Fallback: just broadcast via WS
+            if self._ws_manager:
+                self._ws_manager.broadcast_sync({
+                    "type": "agent_status_change",
+                    "agent_id": f"{channel}:{agent_type}",
+                    "status": "working",
+                })
+
         return True
 
     def _is_alive(self, key: str) -> bool:

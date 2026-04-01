@@ -19,11 +19,13 @@ class WrapperService:
         data_dir: Path,
         mcp_port: int = 8200,
         tool_approval_service=None,
+        ws_manager=None,
     ) -> None:
         self._manager = AgentProcessManager(
             data_dir=data_dir,
             mcp_port=mcp_port,
             tool_approval_service=tool_approval_service,
+            ws_manager=ws_manager,
         )
 
     def start_agent(self, agent_type: str, cwd: str | None = None, channel_id: str = "") -> bool:

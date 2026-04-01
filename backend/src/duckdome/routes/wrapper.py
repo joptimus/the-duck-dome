@@ -3,16 +3,19 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from duckdome.services.channel_service import ChannelService
 from duckdome.services.wrapper_service import WrapperService
 
 router = APIRouter(prefix="/api/wrapper", tags=["wrapper"])
 
 _service: WrapperService | None = None
+_channel_service: ChannelService | None = None
 
 
-def init(service: WrapperService) -> None:
-    global _service
+def init(service: WrapperService, channel_service: ChannelService | None = None) -> None:
+    global _service, _channel_service
     _service = service
+    _channel_service = channel_service
 
 
 def _get_service() -> WrapperService:
@@ -64,6 +67,46 @@ def trigger_agent(body: TriggerRequest):
     if not triggered:
         raise HTTPException(status_code=409, detail=f"Agent '{body.agent_type}' is not running")
     return {"triggered": True, "agent_type": body.agent_type}
+
+
+class BootChannelRequest(BaseModel):
+    channel: str = Field(min_length=1)
+
+
+@router.post("/boot-channel", status_code=200)
+def boot_channel(body: BootChannelRequest):
+    """Start all available agents for a channel and tell them to greet."""
+    import shutil
+
+    svc = _get_service()
+    started = []
+    for agent_type in ["claude", "codex", "gemini"]:
+        if not shutil.which(agent_type):
+            continue
+        if svc.is_running(agent_type, channel_id=body.channel):
+            started.append(agent_type)
+            continue
+
+        # Register agent in channel store first (synchronous) so the
+        # frontend sees them immediately on the next agents fetch.
+        if _channel_service:
+            try:
+                _channel_service.add_agent(body.channel, agent_type)
+            except Exception:
+                pass  # already exists or channel not found
+
+        svc.trigger(
+            agent_type=agent_type,
+            sender="system",
+            text=(
+                "You just joined this channel. Read the latest messages for context. "
+                "Then send a short, unique greeting to let everyone know you're here. "
+                "Be yourself — keep it natural and brief."
+            ),
+            channel=body.channel,
+        )
+        started.append(agent_type)
+    return {"channel": body.channel, "started": started}
 
 
 @router.get("/status", status_code=200)
