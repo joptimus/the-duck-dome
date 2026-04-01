@@ -46,7 +46,9 @@ def test_build_trigger_prompt_uses_claude_specific_mcp_wording():
 
     assert 'DuckDome MCP is already configured in this session under the server name "duckdome".' in prompt
     assert 'Use the DuckDome MCP chat tools for this task.' in prompt
-    assert 'Join channel "ch-123", read the latest messages there' in prompt
+    assert 'chat_join(channel="ch-123", agent_type="claude")' in prompt
+    assert 'Do not use channel_id for chat_join; the MCP argument name is channel.' in prompt
+    assert 'chat_read(channel="ch-123") to read the latest messages there' in prompt
     assert 'Do not treat this as a generic MCP resource lookup.' in prompt
     assert 'Do not inspect ~/.claude settings, .mcp.json files' in prompt
     assert 'Do not use curl or direct HTTP calls for DuckDome chat' in prompt

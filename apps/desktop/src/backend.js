@@ -3,6 +3,7 @@ const path = require("path");
 
 const BACKEND_DIR = path.resolve(__dirname, "..", "..", "..", "backend");
 const BACKEND_SRC = path.join(BACKEND_DIR, "src");
+const BACKEND_STOP_TIMEOUT_MS = 8000;
 
 let backendProcess = null;
 
@@ -41,10 +42,38 @@ function startBackend() {
 }
 
 function stopBackend() {
-  if (backendProcess) {
-    backendProcess.kill();
-    backendProcess = null;
-  }
+  if (!backendProcess) return Promise.resolve();
+
+  return new Promise((resolve) => {
+    const proc = backendProcess;
+    let finished = false;
+
+    const finish = () => {
+      if (finished) return;
+      finished = true;
+      resolve();
+    };
+
+    const timeout = setTimeout(() => {
+      if (finished) return;
+      console.warn("[backend] graceful shutdown timed out, forcing exit");
+      try {
+        proc.kill("SIGKILL");
+      } catch {}
+    }, BACKEND_STOP_TIMEOUT_MS);
+
+    proc.once("exit", () => {
+      clearTimeout(timeout);
+      finish();
+    });
+
+    try {
+      proc.kill("SIGINT");
+    } catch {
+      clearTimeout(timeout);
+      finish();
+    }
+  });
 }
 
 module.exports = { startBackend, stopBackend };

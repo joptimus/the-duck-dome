@@ -5,6 +5,8 @@ This feature replaces legacy MCP identity+chat behavior from
 Differences from legacy behavior:
   - Session identity is established by ``chat_join`` with a lightweight
     ``chat_claim`` compatibility alias for Claude-style workflows.
+  - ``chat_join`` also accepts ``channel_id`` as a compatibility alias for
+    clients that infer the REST naming convention instead of the MCP tool name.
   - No job-scoped reads/sends (jobs are separate).
   - No image attachments, choices, or reply_to.
   - Cursor store is in-memory only (no persistence to disk yet).
@@ -68,16 +70,17 @@ class McpBridge:
         def _resolve_join_identity(
             *,
             channel: str,
+            channel_id: str,
             agent_type: str,
             name: str,
-        ) -> tuple[str | None, str | None]:
-            ch = channel.strip()
+        ) -> tuple[str | None, str | None, str | None]:
+            ch = channel.strip() or channel_id.strip()
             agent = (agent_type.strip() or name.strip()).lower()
             if not ch:
-                return None, "Error: channel is required."
+                return None, None, "Error: channel is required."
             if not agent:
-                return None, "Error: agent_type is required."
-            return agent, None
+                return None, None, "Error: agent_type is required."
+            return ch, agent, None
 
         def _ensure_identity(
             *,
@@ -103,6 +106,7 @@ class McpBridge:
         @self._mcp.tool()
         def chat_join(
             channel: str = "general",
+            channel_id: str = "",
             agent_type: str = "",
             name: str = "",
             ctx: Any | None = None,
@@ -110,11 +114,16 @@ class McpBridge:
             """Register this MCP session as an agent in a channel.
 
             Supports DuckDome style ``agent_type`` and legacy Claude style ``name``.
+            Also accepts ``channel_id`` as an alias for ``channel``.
             """
-            agent, err = _resolve_join_identity(channel=channel, agent_type=agent_type, name=name)
+            ch, agent, err = _resolve_join_identity(
+                channel=channel,
+                channel_id=channel_id,
+                agent_type=agent_type,
+                name=name,
+            )
             if err:
                 return err
-            ch = channel.strip()
 
             try:
                 self._trigger_service.register_agent(channel_id=ch, agent_type=agent)

@@ -39,9 +39,13 @@ def inject(
 
 def _inject_via_tmux(text: str, session_name: str, delay: float) -> bool:
     """Send text + Enter to a tmux pane via tmux send-keys."""
+    # Always target the first pane in the session explicitly instead of relying
+    # on the session's currently active pane. This avoids a race where text is
+    # injected into one pane and Enter lands in another if focus changes.
+    target = f"{session_name}:0.0"
     try:
         result = subprocess.run(
-            ["tmux", "send-keys", "-t", session_name, "-l", text],
+            ["tmux", "send-keys", "-t", target, "-l", text],
             capture_output=True,
         )
         if result.returncode != 0:
@@ -53,7 +57,7 @@ def _inject_via_tmux(text: str, session_name: str, delay: float) -> bool:
             return False
         time.sleep(delay)
         enter_result = subprocess.run(
-            ["tmux", "send-keys", "-t", session_name, "Enter"],
+            ["tmux", "send-keys", "-t", target, "Enter"],
             capture_output=True,
         )
         if enter_result.returncode != 0:
