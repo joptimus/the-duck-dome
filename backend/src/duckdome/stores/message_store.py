@@ -64,6 +64,14 @@ class MessageStore:
         self._rewrite()
         return msg
 
+    def delete(self, msg_id: str) -> Message | None:
+        msg = self._messages.pop(msg_id, None)
+        if msg is None:
+            return None
+        self._order = [existing_id for existing_id in self._order if existing_id != msg_id]
+        self._rewrite()
+        return msg
+
     def list_by_channel(
         self, channel: str, after_id: str | None = None
     ) -> list[Message]:

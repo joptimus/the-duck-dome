@@ -106,6 +106,37 @@
   font-style: italic;
 }
 
+.pinnedList {
+  padding: 0 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pinnedItem {
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.pinnedSender {
+  font-family: var(--font-label);
+  font-size: 10px;
+  letter-spacing: var(--ls-sm);
+  text-transform: uppercase;
+  color: var(--blue);
+  margin-bottom: 3px;
+}
+
+.pinnedText {
+  font-family: var(--font-body);
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.35;
+  word-break: break-word;
+}
+
 /* ── Scrollable Area ── */
 .scrollArea {
   flex: 1;

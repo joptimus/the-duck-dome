@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from duckdome.models.message import Delivery, DeliveryState, Message, MessageType
 from duckdome.stores.message_store import MessageStore
+from duckdome.ws.events import MESSAGE_DELETED, NEW_MESSAGE
 
 if TYPE_CHECKING:
     from duckdome.ws.manager import ConnectionManager
@@ -138,6 +139,7 @@ class MessageService:
         text: str,
         channel: str,
         sender: str,
+        reply_to: str | None = None,
         type: MessageType | None = None,
         subtype: str | None = None,
         agent: str | None = None,
@@ -162,28 +164,27 @@ class MessageService:
                     f"Human message required to resume."
                 )
                 guard_msg = Message(
-                    text=guard_text,
-                    channel=channel,
-                    sender="system",
+                text=guard_text,
+                channel=channel,
+                sender="system",
                     type=MessageType.SYSTEM,
-                    subtype="error",
-                )
-                self._store.add(guard_msg)
-                self._broadcast(
-                    {"type": "new_message", "message": guard_msg.model_dump()}
-                )
+                subtype="error",
+            )
+            self._store.add(guard_msg)
+            self._broadcast({"type": NEW_MESSAGE, "message": guard_msg.model_dump()})
 
             # Store the agent message but skip delivery/trigger creation
             msg = Message(
                 text=text,
                 channel=channel,
                 sender=sender,
+                reply_to=reply_to,
                 type=type or MessageType.CHAT,
                 subtype=subtype,
                 agent=agent,
             )
             self._store.add(msg)
-            self._broadcast({"type": "new_message", "message": msg.model_dump()})
+            self._broadcast({"type": NEW_MESSAGE, "message": msg.model_dump()})
             return msg
 
         # --- Normal routing ---
@@ -204,6 +205,7 @@ class MessageService:
             text=text,
             channel=channel,
             sender=sender,
+            reply_to=reply_to,
             type=type or MessageType.CHAT,
             subtype=subtype,
             agent=agent,
@@ -211,7 +213,7 @@ class MessageService:
             deliveries=deliveries,
         )
         self._store.add(msg)
-        self._broadcast({"type": "new_message", "message": msg.model_dump()})
+        self._broadcast({"type": NEW_MESSAGE, "message": msg.model_dump()})
 
         if self._trigger_service is not None:
             targets: list[str] = []
@@ -252,8 +254,15 @@ class MessageService:
             agent=agent,
         )
         self._store.add(msg)
-        self._broadcast({"type": "new_message", "message": msg.model_dump()})
+        self._broadcast({"type": NEW_MESSAGE, "message": msg.model_dump()})
         return msg
+
+    def delete_message(self, msg_id: str) -> Message | None:
+        deleted = self._store.delete(msg_id)
+        if deleted is None:
+            return None
+        self._broadcast({"type": MESSAGE_DELETED, "message_id": msg_id, "channel": deleted.channel})
+        return deleted
 
     def _get_delivery_for_agent(
         self, msg: Message, agent_name: str

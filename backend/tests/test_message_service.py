@@ -37,6 +37,12 @@ def test_send_without_mention(service):
     assert msg.deliveries == []
 
 
+def test_send_with_reply_to(service):
+    original = service.send(text="base", channel="general", sender="human")
+    reply = service.send(text="reply", channel="general", sender="human", reply_to=original.id)
+    assert reply.reply_to == original.id
+
+
 def test_mention_detection_case_insensitive(service):
     msg = service.send(text="@Claude help", channel="general", sender="human")
     assert msg.delivery is not None
@@ -149,3 +155,11 @@ def test_duplicate_send_is_idempotent(store):
     store.add(msg)  # duplicate
     msgs = store.list_by_channel("general")
     assert len(msgs) == 1
+
+
+def test_delete_message(service, store):
+    msg = service.send(text="remove me", channel="general", sender="human")
+    deleted = service.delete_message(msg.id)
+    assert deleted is not None
+    assert deleted.id == msg.id
+    assert store.get(msg.id) is None

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { agentMeta } from "../../constants/agents";
 import { slashCommands } from "../../constants/composer";
 import { AgentLogo, BoltIcon, ClockIcon, MicIcon, UsersIcon } from "../icons";
@@ -10,7 +10,13 @@ function mentionFilterFromInput(value) {
   return match ? match[1].toLowerCase() : null;
 }
 
-export function Composer({ onSchedule, onSendMessage, initialValue = "" }) {
+export function Composer({
+  onSchedule,
+  onSendMessage,
+  initialValue = "",
+  replyMessage = null,
+  onCancelReply,
+}) {
   const [value, setValue] = useState(initialValue);
   const [showSlash, setShowSlash] = useState(initialValue.startsWith("/"));
   const [showMention, setShowMention] = useState(false);
@@ -20,6 +26,17 @@ export function Composer({ onSchedule, onSendMessage, initialValue = "" }) {
   const [mentionFilter, setMentionFilter] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef(null);
+
+  function resizeInput() {
+    const input = inputRef.current;
+    if (!input) return;
+    input.style.height = "auto";
+    input.style.height = `${Math.min(input.scrollHeight, 168)}px`;
+  }
+
+  useLayoutEffect(() => {
+    resizeInput();
+  }, [value]);
 
   const allMentionAgents = useMemo(
     () => Object.entries(agentMeta).filter(([key]) => key !== "user"),
@@ -176,6 +193,17 @@ export function Composer({ onSchedule, onSendMessage, initialValue = "" }) {
 
   return (
     <div className={styles.wrapper}>
+      {replyMessage && (
+        <div className={styles.replyContext}>
+          <div className={styles.replyText}>
+            Replying to <strong>{replyMessage.sender}</strong>: {String(replyMessage.content || replyMessage.text || '').slice(0, 80)}
+          </div>
+          <button type="button" className={styles.replyClose} onClick={onCancelReply} aria-label="Dismiss reply context">
+            ×
+          </button>
+        </div>
+      )}
+
       {showSlash && filteredCommands.length > 0 ? (
         <div className={`${styles.popup} ${styles.slashPopup}`}>
           <div className={`${styles.popupHeader} ${styles.sticky}`}>Commands</div>
@@ -260,13 +288,14 @@ export function Composer({ onSchedule, onSendMessage, initialValue = "" }) {
       ) : null}
 
       <div className={`${styles.bar} ${popupOpen ? styles.barOpen : ""}`.trim()}>
-        <input
+        <textarea
           ref={inputRef}
           className={styles.input}
           value={value}
           onChange={handleChange}
           onKeyDown={handleKeyDown}
           placeholder="Type a message... (use @name to mention agents)"
+          rows={1}
         />
         <ToolbarBtn title="Voice">
           <MicIcon size={14} color="currentColor" />
@@ -284,10 +313,9 @@ export function Composer({ onSchedule, onSendMessage, initialValue = "" }) {
       </div>
 
       <div className={styles.helper}>
-        Enter to send · Paste/drop images · Mic for voice · Type{" "}
+        Enter to send · Shift+Enter for newline · Type{" "}
         <span className={styles.hint}>/</span> or <span className={styles.hint}>@</span> for autocomplete
       </div>
     </div>
   );
 }
-

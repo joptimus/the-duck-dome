@@ -21,6 +21,10 @@ async function request(path, options) {
     throw httpError;
   }
 
+  if (response.status === 204) {
+    return null;
+  }
+
   return response.json();
 }
 
@@ -169,7 +173,7 @@ export async function getPendingToolRequests(channelId) {
   }
 }
 
-export async function sendChannelMessage({ channelId, text, sender = "human" }) {
+export async function sendChannelMessage({ channelId, text, sender = "human", replyTo = null }) {
   return request("/api/messages", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -177,7 +181,14 @@ export async function sendChannelMessage({ channelId, text, sender = "human" }) 
       text,
       channel: channelId,
       sender,
+      reply_to: replyTo,
     }),
+  });
+}
+
+export async function deleteChannelMessage(messageId) {
+  return request(`/api/messages/${encodeURIComponent(messageId)}`, {
+    method: "DELETE",
   });
 }
 
@@ -207,6 +218,18 @@ export async function denyToolRequest(approvalId, { remember = false } = {}) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ resolved_by: "human", remember }),
+  });
+}
+
+export async function getJobs(channelId) {
+  return request(`/api/jobs?channel=${encodeURIComponent(channelId)}`);
+}
+
+export async function createJob(payload) {
+  return request("/api/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
   });
 }
 
