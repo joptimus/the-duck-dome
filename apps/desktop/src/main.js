@@ -73,6 +73,21 @@ ipcMain.handle("desktop:pick-directory", async (_event, opts = {}) => {
 });
 
 const { startBackend, stopBackend } = require("./backend");
+let isQuitting = false;
+
+function requestAppQuit() {
+  if (isQuitting) {
+    return;
+  }
+  isQuitting = true;
+  stopBackend()
+    .catch((err) => {
+      console.error(`[backend] stop failed: ${err?.message || err}`);
+    })
+    .finally(() => {
+      app.quit();
+    });
+}
 
 app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
@@ -83,17 +98,22 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  requestAppQuit();
 });
 
 app.on("activate", () => {
+  if (isQuitting) {
+    return;
+  }
   if (BrowserWindow.getAllWindows().length === 0) {
     createWindow();
   }
 });
 
-app.on("before-quit", () => {
-  stopBackend();
+app.on("before-quit", (event) => {
+  if (isQuitting) {
+    return;
+  }
+  event.preventDefault();
+  requestAppQuit();
 });

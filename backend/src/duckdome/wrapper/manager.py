@@ -230,16 +230,49 @@ def _open_agent_terminal(tmux_session: str) -> None:
     """
     if sys.platform != "darwin":
         return
-    attach_cmd = f"tmux attach-session -t {tmux_session}"
+    marker = f"DuckDome:{tmux_session}"
+    # Tag the tab title with a DuckDome marker so we can close only windows
+    # opened by DuckDome during shutdown.
+    attach_cmd = (
+        f"printf '\\033]0;{marker}\\007'; "
+        f"tmux attach-session -t {shlex.quote(tmux_session)}; "
+        "exit"
+    )
     # Tell Terminal.app to open a new window running the attach command.
     # The window title will show the session name; closing the window leaves
     # the tmux session (and the agent) running in the background.
     # AppleScript requires double-quoted strings; shlex single-quotes are invalid.
-    script = f'tell application "Terminal" to do script "{attach_cmd}"'
+    # Use JSON string quoting so backslashes/quotes in the shell command don't
+    # break AppleScript parsing (for example with ANSI escape sequences).
+    script = f"tell application \"Terminal\" to do script {json.dumps(attach_cmd)}"
     try:
         subprocess.Popen(["osascript", "-e", script])
     except Exception:
         logger.warning("[%s] could not open Terminal.app window", tmux_session)
+
+
+def _close_agent_terminal(tmux_session: str) -> None:
+    """Close Terminal.app windows opened for a DuckDome tmux session."""
+    if sys.platform != "darwin":
+        return
+    marker = f"DuckDome:{tmux_session}"
+    script = f'''
+tell application "Terminal"
+  repeat with w in windows
+    try
+      set t to selected tab of w
+      set tabName to name of t
+      if tabName contains "{marker}" then
+        close t
+      end if
+    end try
+  end repeat
+end tell
+'''
+    try:
+        subprocess.run(["osascript", "-e", script], capture_output=True, timeout=3)
+    except Exception:
+        logger.warning("[%s] could not close Terminal.app window", tmux_session)
 
 
 @dataclass
@@ -516,6 +549,7 @@ class AgentProcessManager:
             subprocess.run(
                 ["tmux", "kill-session", "-t", agent_proc.tmux_session], capture_output=True
             )
+            _close_agent_terminal(agent_proc.tmux_session)
         elif agent_proc.proc and agent_proc.proc.poll() is None:
             logger.info("[%s] terminating pid=%d", agent_type, agent_proc.pid)
             agent_proc.proc.terminate()
