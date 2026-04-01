@@ -105,3 +105,31 @@ class TestClaudeOldFormat:
         assert "git status" in match.description
         assert match.approve_key == "y"
         assert match.deny_key == "n"
+
+
+class TestCodexPatterns:
+    """Test Codex CLI permission prompt detection."""
+
+    def test_shell_command_prompt(self):
+        text = (
+            "  Would you like to run the following command?\n"
+            "  $ New-Item -ItemType Directory -Force -Path C:\\tmp | Out-Null\n"
+            "\u203a 1. Yes, proceed (y)\n"
+            "  2. Yes, and don't ask again for commands that start with `New-Item` (p)\n"
+            "  3. No, and tell Codex what to do differently (esc)\n"
+            "\n"
+            "  Press enter to confirm or esc to cancel\n"
+        )
+        match = match_permission_prompt(text, "codex")
+        assert match is not None
+        assert match.tool == "Shell"
+        assert "New-Item" in match.description
+        assert match.approve_key == "y"
+        assert match.deny_key == "\x1b"
+
+    def test_no_match_on_working(self):
+        text = "Working (5s \u2022 esc to interrupt)\n\ngpt-5.4 medium"
+        assert match_permission_prompt(text, "codex") is None
+
+    def test_no_match_on_empty(self):
+        assert match_permission_prompt("", "codex") is None

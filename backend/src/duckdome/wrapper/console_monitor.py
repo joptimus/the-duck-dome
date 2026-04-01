@@ -40,6 +40,8 @@ def _read_console_buffer(pid: int, lines: int = 50) -> str:
              str(pid), str(lines)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )

@@ -192,6 +192,14 @@ export async function deleteChannelMessage(messageId) {
   });
 }
 
+export async function bootChannel(channelId) {
+  return request("/api/wrapper/boot-channel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channel: channelId }),
+  });
+}
+
 export async function triggerAgent(agentType, sender, text, channelId) {
   return request("/api/wrapper/trigger", {
     method: "POST",

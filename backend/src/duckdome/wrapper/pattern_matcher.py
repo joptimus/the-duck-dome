@@ -134,8 +134,53 @@ def _match_claude(text: str) -> PromptMatch | None:
     return None
 
 
+# Codex CLI permission prompt format:
+#
+#  Would you like to run the following command?
+#  $ New-Item -ItemType Directory -Force -Path C:\tmp | ...
+#  › 1. Yes, proceed (y)
+#    2. Yes, and don't ask again for commands that start with `...` (p)
+#    3. No, and tell Codex what to do differently (esc)
+#
+#  Press enter to confirm or esc to cancel
+
+_CODEX_WOULD_LIKE_RE = re.compile(
+    r"Would you like to run the following command\?",
+    re.IGNORECASE,
+)
+
+# The command line starts with "$ " after the prompt
+_CODEX_COMMAND_RE = re.compile(
+    r"^\s*\$\s+(.+)",
+    re.MULTILINE,
+)
+
+_CODEX_YES_RE = re.compile(r"Yes,?\s*proceed\s*\(y\)", re.IGNORECASE)
+
+
+def _match_codex(text: str) -> PromptMatch | None:
+    if not _CODEX_WOULD_LIKE_RE.search(text):
+        return None
+
+    # Extract the command
+    description = ""
+    cmd_m = _CODEX_COMMAND_RE.search(text)
+    if cmd_m:
+        description = cmd_m.group(1).strip()
+
+    # Approve = "y", Deny = Escape (0x1B)
+    return PromptMatch(
+        tool="Shell",
+        description=description,
+        approve_key="y",
+        deny_key="\x1b",
+        fingerprint=_fingerprint("Shell", description),
+    )
+
+
 _MATCHERS: dict[str, callable] = {
     "claude": _match_claude,
+    "codex": _match_codex,
 }
 
 
