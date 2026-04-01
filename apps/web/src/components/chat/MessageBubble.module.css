@@ -23,10 +23,6 @@
   margin-top: 2px;
 }
 
-.avatarUnknown {
-  border-style: dashed;
-}
-
 .bubble {
   position: relative;
   flex: 0 1 auto;
@@ -45,10 +41,6 @@
   min-width: 120px;
   max-width: 62%;
   border-radius: 14px 14px 4px 14px;
-}
-
-.bubbleUnknown {
-  border-style: dashed;
 }
 
 .header {

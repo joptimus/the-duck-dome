@@ -132,8 +132,8 @@ export function MessageBubble({ message, index = 0 }) {
   const rowRef = useRef(null);
 
   const agentKey = String(message.agent || message.sender || 'user').toLowerCase();
-  const isUnknownAgent = !agentMeta[agentKey] && agentKey !== 'user' && agentKey !== 'human';
-  const isUser = agentKey === 'user' || agentKey === 'human';
+  const isUser = agentKey === 'user' || agentKey === 'human' || agentKey === 'you';
+  const isUnknownAgent = !isUser && !agentMeta[agentKey];
   const meta = isUser ? agentMeta.user : agentMeta[agentKey] || UNKNOWN_AGENT_META;
   const displayName = isUser
     ? 'You'
@@ -172,7 +172,7 @@ export function MessageBubble({ message, index = 0 }) {
     >
       {!isUser && (
         <div
-          className={`${styles.avatar} ${isUnknownAgent ? styles.avatarUnknown : ''}`}
+          className={styles.avatar}
           style={{
             background: `${meta.color}26`,
             borderColor: `${meta.color}80`,
@@ -183,7 +183,7 @@ export function MessageBubble({ message, index = 0 }) {
       )}
 
       <div
-        className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent} ${isUnknownAgent ? styles.bubbleUnknown : ''}`}
+        className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent}`}
         style={{
           background: meta?.bg,
           borderColor: hovered || roleOpen ? `${meta?.color}66` : meta?.border,
