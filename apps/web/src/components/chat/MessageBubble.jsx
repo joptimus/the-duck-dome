@@ -1,39 +1,21 @@
-import { useState } from 'react';
-import ReactMarkdown from 'react-markdown';
+import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { agentMeta } from '../../constants/agents';
+import { AgentLogo, BoltIcon } from '../icons';
+import { StatusTag } from '../primitives';
 import { MessageToolbar } from './MessageToolbar';
 import styles from './MessageBubble.module.css';
 
 const MENTION_PATTERN = /(^|[\s(])(@[a-z0-9_-]+)/gi;
-
-const AGENT_META = {
-  claude: { color: 'var(--agent-claude)', bg: 'var(--agent-claude-bg)', border: 'var(--agent-claude-border)' },
-  codex: { color: 'var(--agent-codex)', bg: 'var(--agent-codex-bg)', border: 'var(--agent-codex-border)' },
-  gemini: { color: 'var(--agent-gemini)', bg: 'var(--agent-gemini-bg)', border: 'var(--agent-gemini-border)' },
-  kimi: { color: 'var(--agent-kimi)', bg: 'var(--agent-kimi-bg)', border: 'var(--agent-kimi-border)' },
-  qwen: { color: 'var(--agent-qwen)', bg: 'var(--agent-qwen-bg)', border: 'var(--agent-qwen-border)' },
-  kilo: { color: 'var(--agent-kilo)', bg: 'var(--agent-kilo-bg)', border: 'var(--agent-kilo-border)' },
-  minimax: { color: 'var(--agent-minimax)', bg: 'var(--agent-minimax-bg)', border: 'var(--agent-minimax-border)' },
+const INLINE_CODE_PATTERN = /(`[^`]+`)/g;
+const ROLE_OPTIONS = ['None', 'Planner', 'Designer', 'Architect', 'Builder', 'Reviewer', 'Researcher', 'Red Team', 'Wry', 'Unhinged', 'Hype'];
+const UNKNOWN_AGENT_META = {
+  color: 'var(--text-muted)',
+  label: 'Unknown agent',
+  bg: 'rgba(255,255,255,0.03)',
+  border: 'rgba(255,255,255,0.14)',
 };
-
-function normalizeDisplayText(value) {
-  if (typeof value !== 'string' || value.length === 0) return value;
-  return value
-    .replaceAll('â€”', '—')
-    .replaceAll('â€“', '–')
-    .replaceAll('â€˜', '‘')
-    .replaceAll('â€™', '’')
-    .replaceAll('â€œ', '“')
-    .replaceAll('â€', '”')
-    .replaceAll('â€¦', '…')
-    .replaceAll('Â ', ' ');
-}
-
-function formatTime(ts) {
-  const d = new Date(ts * 1000);
-  return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-}
 
 function splitTextIntoMentionNodes(value) {
   const nodes = [];
@@ -84,82 +66,189 @@ function remarkMentions() {
   };
 }
 
+function splitDetailSegments(detail) {
+  return String(detail || '')
+    .split(INLINE_CODE_PATTERN)
+    .filter(Boolean)
+    .map((segment) => ({
+      value: segment,
+      isCode: segment.startsWith('`') && segment.endsWith('`'),
+    }));
+}
+
+function RoleDropdown({ selectedRole = '', onSelect, onClose }) {
+  const [customRole, setCustomRole] = useState('');
+
+  function handleSelect(role) {
+    const nextRole = role === 'None' ? '' : role;
+    onSelect?.(nextRole);
+    onClose?.();
+  }
+
+  function handleCustomCommit() {
+    const nextRole = customRole.trim();
+    if (!nextRole) return;
+    onSelect?.(nextRole);
+    onClose?.();
+  }
+
+  return (
+    <div className={styles.roleDropdown}>
+      <div className={styles.roleGrid}>
+        {ROLE_OPTIONS.map((role) => {
+          const isActive = (role === 'None' && !selectedRole) || role === selectedRole;
+          return (
+          <button
+            key={role}
+            type="button"
+            className={`${styles.rolePill} ${isActive ? styles.rolePillActive : ''}`}
+            onClick={() => handleSelect(role)}
+          >
+            {role}
+          </button>
+          );
+        })}
+      </div>
+      <input
+        className={styles.roleInput}
+        placeholder="Custom..."
+        value={customRole}
+        onChange={(event) => setCustomRole(event.target.value)}
+        onBlur={handleCustomCommit}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            handleCustomCommit();
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 export function MessageBubble({ message, index = 0 }) {
   const [hovered, setHovered] = useState(false);
-  const { sender, text, timestamp } = message;
-  const normalizedText = normalizeDisplayText(text || '');
-  const isUser = !AGENT_META[sender?.toLowerCase()];
-  const agent = AGENT_META[sender?.toLowerCase()];
+  const [roleOpen, setRoleOpen] = useState(false);
+  const [selectedRole, setSelectedRole] = useState('');
+  const rowRef = useRef(null);
 
-  const rowClass = `${styles.row} ${isUser ? styles.rowUser : ''}`;
-  const bubbleClass = `${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent}`;
+  const agentKey = String(message.agent || message.sender || 'user').toLowerCase();
+  const isUser = agentKey === 'user' || agentKey === 'human' || agentKey === 'you';
+  const isUnknownAgent = !isUser && !agentMeta[agentKey];
+  const meta = isUser ? agentMeta.user : agentMeta[agentKey] || UNKNOWN_AGENT_META;
+  const displayName = isUser
+    ? 'You'
+    : isUnknownAgent
+      ? String(message.sender || message.agent || UNKNOWN_AGENT_META.label)
+      : meta?.label || String(message.sender || message.agent || '');
+  const normalizedText = message.content || message.text || '';
+  const timestamp = message.time || message.timestamp || '--';
+  const details = Array.isArray(message.details) ? message.details : [];
+  const showControls = !isUser && (hovered || roleOpen);
 
-  const bubbleStyle = agent
-    ? { background: agent.bg, borderColor: agent.border }
-    : {};
+  useEffect(() => {
+    if (!isUnknownAgent || import.meta.env.PROD) return;
+    // Unknown agent messages should stay visible instead of silently rendering as user messages.
+    console.warn('Missing agent metadata for message bubble agent', { agentKey, message });
+  }, [agentKey, isUnknownAgent, message]);
+
+  useEffect(() => {
+    if (!roleOpen) return undefined;
+
+    function handlePointerDown(event) {
+      if (!rowRef.current?.contains(event.target)) {
+        setRoleOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown);
+    return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [roleOpen]);
 
   return (
     <div
-      className={rowClass}
-      style={{ animationDelay: `${index * 0.03}s` }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      ref={rowRef}
+      className={`${styles.row} ${isUser ? styles.rowUser : ''}`}
+      style={{ animation: `fadeUp 0.3s ease ${index * 0.06}s both` }}
     >
       {!isUser && (
         <div
           className={styles.avatar}
           style={{
-            border: `2px solid ${agent?.color || 'var(--text-muted)'}`,
-            color: agent?.color || 'var(--text-muted)',
+            background: `${meta.color}26`,
+            borderColor: `${meta.color}80`,
           }}
         >
-          {sender?.[0]?.toUpperCase() || '?'}
+          <AgentLogo agent={agentKey} size={18} />
         </div>
       )}
 
-      <div className={bubbleClass} style={bubbleStyle}>
-        <div className={styles.header}>
-          <span className={styles.name} style={{ color: agent?.color || 'var(--text-primary)' }}>
-            {sender}
-          </span>
-          <span className={styles.timestamp}>{formatTime(timestamp)}</span>
+      <div
+        className={`${styles.bubble} ${isUser ? styles.bubbleUser : styles.bubbleAgent}`}
+        style={{
+          background: meta?.bg,
+          borderColor: hovered || roleOpen ? `${meta?.color}66` : meta?.border,
+          boxShadow: hovered || roleOpen ? `0 0 12px ${meta?.color}14` : 'none',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => {
+          if (!roleOpen) {
+            setHovered(false);
+          }
+        }}
+      >
+        <div className={`${styles.header} ${isUser ? styles.headerUser : ''}`}>
+          {!isUser ? (
+            <>
+              <span className={styles.name} style={{ color: meta?.color }}>{displayName}</span>
+              <StatusTag status={message.status} />
+              <span className={styles.timestamp}>{timestamp}</span>
+              {showControls && (
+                <div className={styles.roleWrap}>
+                  <button
+                    type="button"
+                    className={`${styles.roleButton} ${roleOpen ? styles.roleButtonOpen : ''}`}
+                    onClick={() => setRoleOpen((value) => !value)}
+                  >
+                    {selectedRole || 'choose a role'}
+                  </button>
+                  {roleOpen && (
+                    <RoleDropdown
+                      selectedRole={selectedRole}
+                      onSelect={setSelectedRole}
+                      onClose={() => setRoleOpen(false)}
+                    />
+                  )}
+                </div>
+              )}
+            </>
+          ) : (
+            <span className={styles.timestamp}>{timestamp}</span>
+          )}
         </div>
+
         <div className={styles.body}>
           <ReactMarkdown
             remarkPlugins={[remarkGfm, remarkMentions]}
+            urlTransform={(url) => (typeof url === 'string' && url.startsWith('mention:') ? url : defaultUrlTransform(url))}
             components={{
               a: ({ href, children, ...props }) => {
                 if (typeof href === 'string' && href.startsWith('mention:')) {
-                  const key = href.slice('mention:'.length).toLowerCase();
-                  const meta = agentMeta[key];
                   return (
-                    <span
-                      {...props}
-                      className={styles.mention}
-                      style={{
-                        color: meta?.color || 'var(--blue)',
-                        background: meta?.bg || 'rgba(0, 212, 255, 0.1)',
-                        borderColor: meta?.border || 'rgba(0, 212, 255, 0.25)',
-                      }}
-                    >
+                    <span {...props} className={styles.mention}>
                       {children}
                     </span>
                   );
                 }
-                return (
-                  <a href={href} {...props} target="_blank" rel="noreferrer" className={styles.link} />
+                return <a href={href} {...props} target="_blank" rel="noreferrer" className={styles.link} />;
+              },
+              code: ({ node, className, children, ...props }) => {
+                const isBlockCode = node?.tagName === 'code' && node?.parent?.tagName === 'pre';
+                return isBlockCode ? (
+                  <code {...props} className={`${styles.codeBlock} ${className || ''}`.trim()}>{children}</code>
+                ) : (
+                  <code {...props} className={styles.inlineCode}>{children}</code>
                 );
               },
-              code: ({ inline, className, children, ...props }) =>
-                inline ? (
-                  <code {...props} className={styles.inlineCode}>
-                    {children}
-                  </code>
-                ) : (
-                  <code {...props} className={`${styles.codeBlock} ${className || ''}`.trim()}>
-                    {children}
-                  </code>
-                ),
               pre: ({ children }) => <pre className={styles.pre}>{children}</pre>,
               p: ({ children }) => <p className={styles.paragraph}>{children}</p>,
               ul: ({ children }) => <ul className={styles.list}>{children}</ul>,
@@ -171,7 +260,40 @@ export function MessageBubble({ message, index = 0 }) {
           </ReactMarkdown>
         </div>
 
-        {hovered && <MessageToolbar messageId={message.id} />}
+        {!isUser && details.length > 0 && (
+          <div className={styles.details}>
+            <div className={styles.detailsDivider} style={{ background: `${meta.color}2e` }} />
+            <div className={styles.detailsLabel} style={{ color: meta.color }}>
+              <BoltIcon size={9} color={meta.color} glow={false} />
+              <span>Changes:</span>
+            </div>
+            <div className={styles.detailsList}>
+              {details.map((detail, detailIndex) => (
+                <div key={`${message.id || index}-detail-${detailIndex}`} className={styles.detailItem}>
+                  <span className={styles.detailBullet} style={{ background: `${meta.color}99` }} />
+                  <span className={styles.detailText}>
+                    {splitDetailSegments(detail).map((segment, segmentIndex) => (
+                      segment.isCode ? (
+                        <code key={segmentIndex} className={styles.detailCode}>{segment.value.slice(1, -1)}</code>
+                      ) : (
+                        <span key={segmentIndex}>{segment.value}</span>
+                      )
+                    ))}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {!isUser && (
+          <MessageToolbar
+            visible={showControls}
+            roleOpen={roleOpen}
+            agentColor={meta?.color || 'var(--text-muted)'}
+            messageText={normalizedText}
+          />
+        )}
       </div>
     </div>
   );

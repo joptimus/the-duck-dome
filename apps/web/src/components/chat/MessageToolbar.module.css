@@ -1,48 +1,54 @@
 .toolbar {
-  position: absolute;
-  bottom: -16px;
-  right: 12px;
   display: flex;
   align-items: center;
-  gap: 2px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 3px 4px;
-  z-index: 10;
-  animation: fadeUp 0.15s ease;
+  gap: 1px;
+  max-height: 0;
+  opacity: 0;
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 1px solid;
+  overflow: hidden;
+  transition:
+    max-height 0.2s ease,
+    opacity 0.15s ease,
+    margin-top 0.2s ease,
+    padding-top 0.2s ease;
+}
+
+.toolbarVisible {
+  max-height: 40px;
+  opacity: 1;
+  margin-top: 8px;
+  padding-top: 6px;
+}
+
+.spacer {
+  flex: 1;
 }
 
 .btn {
+  position: relative;
   width: 28px;
   height: 28px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  border-radius: 5px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: color 0.1s, background 0.1s;
+  transition: all 0.12s;
 }
 
 .btn:hover {
+  background: rgba(255, 255, 255, 0.06);
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
 }
 
 .btnDelete:hover {
+  background: rgba(255, 77, 109, 0.15);
   color: var(--error);
-  background: rgba(255, 77, 109, 0.1);
-}
-
-.divider {
-  width: 1px;
-  height: 18px;
-  background: var(--border);
-  margin: 0 2px;
 }
 
 .copied {
@@ -51,15 +57,17 @@
 
 .tooltip {
   position: absolute;
-  bottom: 100%;
-  right: 0;
-  margin-bottom: 4px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  padding: 3px 8px;
-  font-size: var(--fs-micro);
-  color: var(--success);
+  top: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--success);
+  color: #000;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
   white-space: nowrap;
-  animation: fadeUp 0.1s ease;
+  pointer-events: none;
+  animation: fadeUp 0.2s ease;
 }

@@ -46,16 +46,16 @@
 .agentName {
   font-family: var(--font-label);
   font-weight: 700;
-  font-size: var(--fs-xs);
+  font-size: 15px;
   text-transform: uppercase;
-  letter-spacing: var(--ls-xs);
+  letter-spacing: 0.04em;
 }
 
 .statusBadge {
   font-family: var(--font-label);
   font-weight: 700;
-  font-size: 10px;
-  letter-spacing: var(--ls-lg);
+  font-size: 12px;
+  letter-spacing: 0.1em;
   padding: 2px 8px;
   border-radius: 4px;
   border: 1px solid;
@@ -63,7 +63,7 @@
 
 .time {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--text-muted);
   margin-left: auto;
 }
@@ -84,15 +84,15 @@
 .toolName {
   font-family: var(--font-label);
   font-weight: 600;
-  font-size: 11px;
+  font-size: 14px;
   color: var(--text-secondary);
   text-transform: uppercase;
-  letter-spacing: var(--ls-sm);
+  letter-spacing: 0.06em;
 }
 
 .diff {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 12px;
   color: var(--success);
 }
 
@@ -102,7 +102,7 @@
   border-radius: 6px;
   padding: 8px 12px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
+  font-size: 14px;
   color: var(--text-primary);
   word-break: break-all;
   line-height: 1.6;
@@ -118,7 +118,7 @@
   padding: 0 14px;
   margin-bottom: 12px;
   font-family: var(--font-body);
-  font-size: 12.5px;
+  font-size: 15px;
   color: var(--text-secondary);
   line-height: 1.5;
 }
@@ -139,13 +139,13 @@
   flex: 1;
   padding: 8px 0;
   border-radius: 7px;
-  background: rgba(0, 255, 163, 0.09);
-  border: 1px solid rgba(0, 255, 163, 0.22);
+  background: rgba(0, 255, 163, 0.15);
+  border: 1px solid rgba(0, 255, 163, 0.35);
   color: var(--success);
   font-family: var(--font-label);
   font-weight: 700;
-  font-size: var(--fs-xs);
-  letter-spacing: var(--ls-sm);
+  font-size: 15px;
+  letter-spacing: 0.06em;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -155,22 +155,22 @@
 }
 
 .approveBtn:hover {
-  background: rgba(0, 255, 163, 0.16);
-  border-color: rgba(0, 255, 163, 0.38);
-  box-shadow: 0 0 16px rgba(0, 255, 163, 0.19);
+  background: rgba(0, 255, 163, 0.25);
+  border-color: rgba(0, 255, 163, 0.6);
+  box-shadow: 0 0 16px rgba(0, 255, 163, 0.3);
 }
 
 .denyBtn {
   flex: 1;
   padding: 8px 0;
   border-radius: 7px;
-  background: rgba(255, 77, 109, 0.06);
-  border: 1px solid rgba(255, 77, 109, 0.16);
+  background: rgba(255, 77, 109, 0.1);
+  border: 1px solid rgba(255, 77, 109, 0.25);
   color: var(--error);
   font-family: var(--font-label);
   font-weight: 700;
-  font-size: var(--fs-xs);
-  letter-spacing: var(--ls-sm);
+  font-size: 15px;
+  letter-spacing: 0.06em;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -180,8 +180,8 @@
 }
 
 .denyBtn:hover {
-  background: rgba(255, 77, 109, 0.13);
-  border-color: rgba(255, 77, 109, 0.31);
+  background: rgba(255, 77, 109, 0.2);
+  border-color: rgba(255, 77, 109, 0.5);
 }
 
 /* ── Secondary Buttons ── */
@@ -200,7 +200,7 @@
   border: 1px solid var(--border);
   color: var(--text-muted);
   font-family: var(--font-body);
-  font-size: 10.5px;
+  font-size: 13px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -231,8 +231,8 @@
 .policyHeader {
   font-family: var(--font-label);
   font-weight: 700;
-  font-size: 10px;
-  letter-spacing: var(--ls-lg);
+  font-size: 12px;
+  letter-spacing: 0.1em;
   color: var(--blue);
   text-transform: uppercase;
   margin-bottom: 8px;
@@ -256,13 +256,13 @@
 
 .policyLabel {
   font-family: var(--font-body);
-  font-size: var(--fs-xs);
+  font-size: 15px;
   color: var(--text-primary);
   margin-bottom: 2px;
 }
 
 .policyDesc {
   font-family: var(--font-body);
-  font-size: 10.5px;
+  font-size: 13px;
   color: var(--text-muted);
 }

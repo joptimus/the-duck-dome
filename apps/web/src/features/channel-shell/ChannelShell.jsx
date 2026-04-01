@@ -7,6 +7,7 @@ import {
   getChannel,
   getChannelAgents,
   getChannelMessages,
+  getPendingToolRequests,
   getChannels,
   getChannelTriggers,
   registerRuntimeAgent,
@@ -141,6 +142,83 @@ function normalizeMessages(data, channelId) {
       timestamp: message.timestamp ?? message.time,
     };
   });
+}
+
+function formatApprovalTime(value) {
+  if (value === null || value === undefined || value === "") return "--";
+  const asNumber = Number(value);
+  if (!Number.isFinite(asNumber)) return String(value);
+  return formatClockTime(asNumber);
+}
+
+function normalizeApprovalMessages(data, channelId) {
+  if (!Array.isArray(data)) return [];
+  return data.map((approval, index) => ({
+    id: approval.id || `${channelId || "channel"}-approval-${index}`,
+    type: "tool_approval",
+    sender: String(approval.agent || "system"),
+    sender_type: "tool_approval",
+    status: String(approval.status || "pending").toLowerCase(),
+    agent: String(approval.agent || ""),
+    tool: String(approval.tool || ""),
+    command: formatApprovalCommand(approval.tool, approval.arguments),
+    reason: `${approval.agent} wants to use ${approval.tool}`,
+    diff: extractApprovalDiff(approval.tool, approval.arguments),
+    time: formatApprovalTime(approval.created_at),
+    resolvedAt: approval.resolved_at ? formatApprovalTime(approval.resolved_at) : null,
+    resolvedBy: approval.resolved_by || null,
+    channel: approval.channel || channelId || "",
+    timestamp: approval.created_at ?? null,
+  }));
+}
+
+function mergeChannelTimeline(historyMessages, approvalMessages, existingMessages = []) {
+  const approvalById = new Map();
+
+  for (const msg of existingMessages) {
+    if (msg.type === "tool_approval") {
+      approvalById.set(msg.id, msg);
+    }
+  }
+
+  for (const msg of approvalMessages) {
+    approvalById.set(msg.id, msg);
+  }
+
+  const merged = [...historyMessages];
+  for (const approval of approvalById.values()) {
+    if (!merged.some((msg) => msg.id === approval.id)) {
+      merged.push(approval);
+    }
+  }
+
+  merged.sort((a, b) => Number(a.timestamp || 0) - Number(b.timestamp || 0));
+  return merged;
+}
+
+function formatApprovalCommand(tool, args) {
+  const normalizedTool = String(tool || "").toLowerCase();
+  const params = args && typeof args === "object" ? args : {};
+
+  if (typeof params.command === "string" && params.command.trim()) return params.command;
+  if (typeof params.cmd === "string" && params.cmd.trim()) return params.cmd;
+  if (typeof params.path === "string" && params.path.trim()) {
+    if (normalizedTool === "write_file") return params.path;
+    return `${normalizedTool || "tool"} ${params.path}`;
+  }
+
+  const serialized = JSON.stringify(params);
+  return serialized === "{}" ? normalizedTool : serialized;
+}
+
+function extractApprovalDiff(tool, args) {
+  const normalizedTool = String(tool || "").toLowerCase();
+  if (normalizedTool !== "write_file") return null;
+  const params = args && typeof args === "object" ? args : {};
+  const content = typeof params.content === "string" ? params.content : "";
+  if (!content) return null;
+  const lineCount = content.split(/\r?\n/).length;
+  return `+${lineCount} lines`;
 }
 
 function summarizeTriggers(triggers) {
@@ -322,11 +400,12 @@ export default function ChannelShell() {
     if (!activeChannelId) return undefined;
 
     async function loadChannelContext() {
-      const [channelResult, agentsResult, triggersResult, messagesResult] = await Promise.allSettled([
+      const [channelResult, agentsResult, triggersResult, messagesResult, approvalsResult] = await Promise.allSettled([
         getChannel(activeChannelId),
         getChannelAgents(activeChannelId),
         getChannelTriggers(activeChannelId),
         getChannelMessages(activeChannelId),
+        getPendingToolRequests(activeChannelId),
       ]);
       if (ignore) return;
 
@@ -356,9 +435,17 @@ export default function ChannelShell() {
 
       if (messagesResult.status === "fulfilled") {
         const normalized = normalizeMessages(messagesResult.value, activeChannelId);
+        const approvalMessages =
+          approvalsResult.status === "fulfilled"
+            ? normalizeApprovalMessages(approvalsResult.value, activeChannelId)
+            : [];
         setMessagesByChannelId((prev) => ({
           ...prev,
-          [activeChannelId]: normalized,
+          [activeChannelId]: mergeChannelTimeline(
+            normalized,
+            approvalMessages,
+            prev[activeChannelId] || [],
+          ),
         }));
         setMessagesError(null);
       } else {
@@ -411,21 +498,7 @@ export default function ChannelShell() {
       if (event.type === "tool_approval_updated" && event.approval) {
         const approval = event.approval;
         const approvalChannel = approval.channel;
-        const approvalMsg = {
-          id: approval.id,
-          sender: approval.agent,
-          sender_type: "tool_approval",
-          status: approval.status,
-          agent: approval.agent,
-          tool: approval.tool,
-          command: JSON.stringify(approval.arguments),
-          reason: `${approval.agent} wants to use ${approval.tool}`,
-          time: new Date((approval.created_at || 0) * 1000).toLocaleTimeString(),
-          resolvedAt: approval.resolved_at
-            ? new Date(approval.resolved_at * 1000).toLocaleTimeString()
-            : null,
-          channel: approvalChannel,
-        };
+        const approvalMsg = normalizeApprovalMessages([approval], approvalChannel)[0];
         setMessagesByChannelId((prev) => {
           const existing = prev[approvalChannel] || [];
           const idx = existing.findIndex((m) => m.id === approval.id);
@@ -491,7 +564,7 @@ export default function ChannelShell() {
 
   // Pending approval count for TopBar pill
   const pendingCount = useMemo(
-    () => activeMessages.filter((m) => m.sender_type === "tool_approval" && m.status === "pending").length,
+    () => activeMessages.filter((m) => m.type === "tool_approval" && m.status === "pending").length,
     [activeMessages],
   );
 
