@@ -90,7 +90,6 @@ export function AgentsPanel({
             return null;
           }
 
-          if (index === 0) console.log("[AgentsPanel] agent data:", JSON.stringify(agent));
           const isEditing = editingPrompt === index;
           return (
             <div key={agent.id || agent.agent} className={styles.agentCard} style={{ opacity: agent.running ? 1 : 0.6 }}>

@@ -162,11 +162,13 @@ def _match_codex(text: str) -> PromptMatch | None:
     if not _CODEX_WOULD_LIKE_RE.search(text):
         return None
 
-    # Extract the command
-    description = ""
+    # Require both the command line and the yes-option to be present so that
+    # a truncated buffer read doesn't emit a blank approval card.
     cmd_m = _CODEX_COMMAND_RE.search(text)
-    if cmd_m:
-        description = cmd_m.group(1).strip()
+    if not cmd_m or not _CODEX_YES_RE.search(text):
+        return None
+
+    description = cmd_m.group(1).strip()
 
     # Approve = "y", Deny = Escape (0x1B)
     return PromptMatch(

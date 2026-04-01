@@ -566,7 +566,14 @@ export default function ChannelShell() {
             // Replace optimistic messages from the same sender with the real one.
             const realMsg = normalized[0];
             if (realMsg) {
-              existing = existing.filter((e) => !e.id.startsWith("optimistic-") || e.sender !== realMsg.sender);
+              // Remove only the oldest optimistic placeholder from the same sender,
+              // not all of them — the user may have sent multiple messages in flight.
+              const firstOptimisticIdx = existing.findIndex(
+                (e) => e.id.startsWith("optimistic-") && e.sender === realMsg.sender,
+              );
+              if (firstOptimisticIdx !== -1) {
+                existing = existing.filter((_, i) => i !== firstOptimisticIdx);
+              }
             }
             const deduped = normalized.filter(
               (msg) => !existing.some((e) => e.id === msg.id),

@@ -18,7 +18,7 @@ class ChannelStore(BaseChannelStore):
         self._channels: dict[str, Channel] = {}
         self._channel_order: list[str] = []
         self._agents: dict[str, AgentInstance] = {}
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._load()
 
     def _load(self) -> None:
@@ -62,44 +62,50 @@ class ChannelStore(BaseChannelStore):
             tmp.replace(self._agents_file)
 
     def add_channel(self, channel: Channel) -> Channel:
-        if channel.id in self._channels:
-            return self._channels[channel.id]
-        self._channels[channel.id] = channel
-        self._channel_order.append(channel.id)
-        self._save_channels()
-        return channel
+        with self._lock:
+            if channel.id in self._channels:
+                return self._channels[channel.id]
+            self._channels[channel.id] = channel
+            self._channel_order.append(channel.id)
+            self._save_channels()
+            return channel
 
     def get_channel(self, channel_id: str) -> Channel | None:
         return self._channels.get(channel_id)
 
     def list_channels(self) -> list[Channel]:
-        return [self._channels[cid] for cid in self._channel_order]
+        with self._lock:
+            return [self._channels[cid] for cid in self._channel_order]
 
     def add_agent(self, agent: AgentInstance) -> AgentInstance:
-        if agent.id in self._agents:
-            return self._agents[agent.id]
-        self._agents[agent.id] = agent
-        self._save_agents()
-        return agent
+        with self._lock:
+            if agent.id in self._agents:
+                return self._agents[agent.id]
+            self._agents[agent.id] = agent
+            self._save_agents()
+            return agent
 
     def get_agent(self, agent_id: str) -> AgentInstance | None:
         return self._agents.get(agent_id)
 
     def list_agents(self, channel_id: str) -> list[AgentInstance]:
-        return [a for a in self._agents.values() if a.channel_id == channel_id]
+        with self._lock:
+            return [a for a in self._agents.values() if a.channel_id == channel_id]
 
     def update_agent(self, agent_id: str, agent: AgentInstance) -> AgentInstance | None:
-        if agent_id not in self._agents:
-            return None
-        if agent.id != agent_id:
-            raise ValueError(f"agent.id mismatch: expected {agent_id}, got {agent.id}")
-        self._agents[agent_id] = agent
-        self._save_agents()
-        return agent
+        with self._lock:
+            if agent_id not in self._agents:
+                return None
+            if agent.id != agent_id:
+                raise ValueError(f"agent.id mismatch: expected {agent_id}, got {agent.id}")
+            self._agents[agent_id] = agent
+            self._save_agents()
+            return agent
 
     def remove_agent(self, agent_id: str) -> bool:
-        if agent_id not in self._agents:
-            return False
-        del self._agents[agent_id]
-        self._save_agents()
-        return True
+        with self._lock:
+            if agent_id not in self._agents:
+                return False
+            del self._agents[agent_id]
+            self._save_agents()
+            return True

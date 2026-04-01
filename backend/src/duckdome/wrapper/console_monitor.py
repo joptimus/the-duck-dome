@@ -142,7 +142,7 @@ class ConsoleMonitor:
         changed = buffer != self._last_buffer
         if changed:
             preview = buffer[-300:].replace("\n", "\\n")
-            logger.info("[%s] console buffer changed (pid=%d): ...%s", self._agent_type, self._pid, preview)
+            logger.debug("[%s] console buffer changed (pid=%d): ...%s", self._agent_type, self._pid, preview)
             self._last_buffer = buffer
 
         # 2. Always check for permission prompts (TUI apps redraw in place)

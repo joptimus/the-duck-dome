@@ -15,7 +15,10 @@ Differences from legacy behavior:
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
+
+log = logging.getLogger(__name__)
 
 from mcp.server.fastmcp import FastMCP
 
@@ -107,11 +110,11 @@ class McpBridge:
                     return identity.agent_type, effective_channel
                 # Sender known but no prior chat_join — register on the fly.
                 effective_channel = ch or "general"
-                self._identity_store.set(ctx, channel=effective_channel, agent_type=s)
                 try:
                     self._trigger_service.register_agent(channel_id=effective_channel, agent_type=s)
                 except (ValueError, Exception):
-                    pass
+                    log.warning("[bridge] auto-registration failed for %s in %s", s, effective_channel)
+                self._identity_store.set(ctx, channel=effective_channel, agent_type=s)
                 return s, effective_channel
 
             # 2. No sender — look up by channel (Claude direct connection)
