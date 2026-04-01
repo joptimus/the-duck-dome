@@ -22,6 +22,7 @@ def _get_service() -> WrapperService:
 
 class StartRequest(BaseModel):
     agent_type: str = Field(min_length=1)
+    channel: str = ""
     cwd: str | None = None
 
 
@@ -34,20 +35,21 @@ class TriggerRequest(BaseModel):
 
 class StopRequest(BaseModel):
     agent_type: str = Field(min_length=1)
+    channel: str = ""
 
 
 @router.post("/start", status_code=200)
 def start_agent(body: StartRequest):
     svc = _get_service()
-    started = svc.start_agent(body.agent_type, cwd=body.cwd)
-    return {"started": started, "agent_type": body.agent_type}
+    started = svc.start_agent(body.agent_type, cwd=body.cwd, channel_id=body.channel)
+    return {"started": started, "agent_type": body.agent_type, "channel": body.channel}
 
 
 @router.post("/stop", status_code=200)
 def stop_agent(body: StopRequest):
     svc = _get_service()
-    stopped = svc.stop_agent(body.agent_type)
-    return {"stopped": stopped, "agent_type": body.agent_type}
+    stopped = svc.stop_agent(body.agent_type, channel_id=body.channel)
+    return {"stopped": stopped, "agent_type": body.agent_type, "channel": body.channel}
 
 
 @router.post("/trigger", status_code=200)
@@ -67,4 +69,18 @@ def trigger_agent(body: TriggerRequest):
 @router.get("/status", status_code=200)
 def list_running():
     svc = _get_service()
-    return {"running": svc.list_running()}
+    running = svc.list_running()
+    agents = {}
+    for agent_type in running:
+        details = svc.get_agent_details(agent_type)
+        agents[agent_type] = details or {}
+    return {"running": running, "agents": agents}
+
+
+@router.get("/status/{agent_type}", status_code=200)
+def agent_status(agent_type: str):
+    svc = _get_service()
+    details = svc.get_agent_details(agent_type)
+    if details is None:
+        return {"running": False, "agent_type": agent_type}
+    return {"running": True, "agent_type": agent_type, **details}

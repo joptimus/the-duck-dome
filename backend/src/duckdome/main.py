@@ -91,11 +91,13 @@ def _start_agents_deferred(wrapper_service, stop_event: threading.Event) -> None
     if stop_event.is_set() or not http_ready:
         return
 
+    # Agents are now started on-demand per channel when triggered.
+    # Just log which CLIs are available.
     for agent_type in ["claude", "codex", "gemini"]:
         if stop_event.is_set():
             break
         if shutil.which(agent_type):
-            wrapper_service.start_agent(agent_type)
+            logger.info("%s CLI available in PATH", agent_type)
         else:
             logger.info("Skipping %s: CLI not found in PATH", agent_type)
 
