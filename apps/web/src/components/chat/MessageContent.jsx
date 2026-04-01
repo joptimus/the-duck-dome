@@ -68,7 +68,7 @@ export function MessageContent({ text = '', replyPreview = null, onReplyClick })
           remarkPlugins={[remarkGfm, remarkMentions]}
           urlTransform={(url) => (typeof url === 'string' && url.startsWith('mention:') ? url : defaultUrlTransform(url))}
           components={{
-            a: ({ href, children, ...props }) => {
+            a: ({ href, children, node, ...props }) => {
               if (typeof href === 'string' && href.startsWith('mention:')) {
                 return (
                   <span {...props} className={styles.mention}>

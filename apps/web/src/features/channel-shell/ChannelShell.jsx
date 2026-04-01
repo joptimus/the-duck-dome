@@ -187,7 +187,12 @@ function loadPinnedMessages() {
   if (typeof window === "undefined") return {};
   try {
     const parsed = JSON.parse(window.localStorage.getItem(PINNED_MESSAGES_STORAGE_KEY) || "{}");
-    return parsed && typeof parsed === "object" ? parsed : {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const result = {};
+    for (const [key, value] of Object.entries(parsed)) {
+      if (Array.isArray(value)) result[key] = value;
+    }
+    return result;
   } catch {
     return {};
   }
@@ -559,6 +564,12 @@ export default function ChannelShell() {
             [event.channel]: decorateMessages(existing.filter((message) => message.id !== event.message_id)),
           };
         });
+        setPinnedByChannelId((prev) => {
+          const existing = prev[event.channel] || [];
+          if (!existing.includes(event.message_id)) return prev;
+          return { ...prev, [event.channel]: existing.filter((id) => id !== event.message_id) };
+        });
+        setReplyingTo((prev) => (prev?.id === event.message_id ? null : prev));
       }
 
       if (event.type === "trigger_state_change" && event.trigger_id) {
@@ -708,17 +719,21 @@ export default function ChannelShell() {
 
   const handleDeleteMessage = useCallback(async (message) => {
     if (!message?.id || !activeChannelId) return;
-    await deleteChannelMessage(message.id);
-    setMessagesByChannelId((prev) => ({
-      ...prev,
-      [activeChannelId]: decorateMessages((prev[activeChannelId] || []).filter((item) => item.id !== message.id)),
-    }));
-    setPinnedByChannelId((prev) => ({
-      ...prev,
-      [activeChannelId]: (prev[activeChannelId] || []).filter((id) => id !== message.id),
-    }));
-    if (replyingTo?.id === message.id) {
-      setReplyingTo(null);
+    try {
+      await deleteChannelMessage(message.id);
+      setMessagesByChannelId((prev) => ({
+        ...prev,
+        [activeChannelId]: decorateMessages((prev[activeChannelId] || []).filter((item) => item.id !== message.id)),
+      }));
+      setPinnedByChannelId((prev) => ({
+        ...prev,
+        [activeChannelId]: (prev[activeChannelId] || []).filter((id) => id !== message.id),
+      }));
+      if (replyingTo?.id === message.id) {
+        setReplyingTo(null);
+      }
+    } catch (err) {
+      console.error("Failed to delete message:", err);
     }
   }, [activeChannelId, replyingTo]);
 
@@ -727,17 +742,21 @@ export default function ChannelShell() {
     const sourceText = String(message.content || message.text || "").trim();
     if (!sourceText) return;
     const title = sourceText.split("\n")[0].slice(0, 80) || "New job";
-    const created = await createJob({
-      title,
-      body: sourceText,
-      channel: activeChannelId,
-      created_by: "human",
-    });
-    setJobsByChannelId((prev) => ({
-      ...prev,
-      [activeChannelId]: [normalizeJobs([created])[0], ...(prev[activeChannelId] || [])],
-    }));
-    setActivePanel("jobs");
+    try {
+      const created = await createJob({
+        title,
+        body: sourceText,
+        channel: activeChannelId,
+        created_by: "human",
+      });
+      setJobsByChannelId((prev) => ({
+        ...prev,
+        [activeChannelId]: [normalizeJobs([created])[0], ...(prev[activeChannelId] || [])],
+      }));
+      setActivePanel("jobs");
+    } catch (err) {
+      console.error("Failed to create job from message:", err);
+    }
   }, [activeChannelId]);
 
   const handleReplyJump = useCallback((messageId) => {

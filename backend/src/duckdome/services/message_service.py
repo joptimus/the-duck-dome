@@ -147,6 +147,13 @@ class MessageService:
         if self._channel_service and not self._channel_service.validate_channel(channel):
             raise ValueError(f"Invalid channel: {channel}")
 
+        if reply_to is not None:
+            reply_target = self._store.get(reply_to)
+            if reply_target is None:
+                raise ValueError(f"Unknown reply target: {reply_to}")
+            if reply_target.channel != channel:
+                raise ValueError("reply_to must reference a message in the same channel")
+
         # --- Loop guard check ---
         guard = self._loop_guard.check(
             channel_id=channel,

@@ -32,13 +32,13 @@
 }
 
 .bubbleAgent {
-  min-width: 380px;
+  min-width: min(380px, 100%);
   max-width: 680px;
   border-radius: 14px 14px 14px 4px;
 }
 
 .bubbleUser {
-  min-width: 280px;
+  min-width: min(280px, 100%);
   max-width: 520px;
   border-radius: 14px 14px 4px 14px;
 }
