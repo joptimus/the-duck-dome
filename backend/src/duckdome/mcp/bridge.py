@@ -74,10 +74,8 @@ class McpBridge:
             agent_type: str,
             name: str,
         ) -> tuple[str | None, str | None, str | None]:
-            ch = channel.strip() or channel_id.strip()
+            ch = channel.strip() or channel_id.strip() or "general"
             agent = (agent_type.strip() or name.strip()).lower()
-            if not ch:
-                return None, None, "Error: channel is required."
             if not agent:
                 return None, None, "Error: agent_type is required."
             return ch, agent, None
@@ -105,7 +103,7 @@ class McpBridge:
 
         @self._mcp.tool()
         def chat_join(
-            channel: str = "general",
+            channel: str = "",
             channel_id: str = "",
             agent_type: str = "",
             name: str = "",
