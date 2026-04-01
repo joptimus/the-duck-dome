@@ -36,7 +36,38 @@ import { ScheduleModal } from "../../components/modals/ScheduleModal";
 import CreateChannelModal from "../../components/modals/CreateChannelModal";
 
 const PINNED_MESSAGES_STORAGE_KEY = "duckdome.pinnedMessages";
+const SETTINGS_KEY = "duckdome:settings";
 
+function getDesktopNotificationsEnabled() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return JSON.parse(raw).desktopNotifications === true;
+  } catch { /* ignore */ }
+  return false;
+}
+
+function fireDesktopNotification(message) {
+  if (!getDesktopNotificationsEnabled()) return;
+  if (document.hasFocus()) return;
+
+  const sender = message.sender || message.author || "Someone";
+  const body = message.content || message.text || "";
+  const title = `${sender} in DuckDome`;
+
+  // Use Electron main-process notifications when available (reliable on Windows)
+  if (window.duckdome?.notify) {
+    window.duckdome.notify(title, body);
+    return;
+  }
+
+  // Fallback to browser Notification API
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission === "granted") {
+    new Notification(title, { body, tag: message.id });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission();
+  }
+}
 function normalizeChannels(data) {
   if (!Array.isArray(data)) return [];
   return data.map((item, index) => ({
@@ -542,6 +573,7 @@ export default function ChannelShell() {
       const channelId = activeChannelIdRef.current;
 
       if (event.type === "new_message" && event.message) {
+        fireDesktopNotification(event.message);
         const msgChannelId = event.message.channel || event.message.channel_id;
         if (msgChannelId && msgChannelId === channelId) {
           const normalized = normalizeMessages([event.message], channelId);

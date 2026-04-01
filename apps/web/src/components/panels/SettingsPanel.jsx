@@ -1,23 +1,50 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { BoltIcon } from "../icons";
 import { SectionLabel } from "../primitives";
 import { RightPanel } from "./RightPanel";
 import styles from "./SettingsPanel.module.css";
 
-function FieldInput({ label, defaultValue }) {
+const SETTINGS_KEY = "duckdome:settings";
+
+const DEFAULT_SETTINGS = {
+  name: "James",
+  font: "Sans",
+  contrast: "Normal",
+  loopGuard: "4",
+  ruleRefresh: "Every 10 triggers",
+  desktopNotifications: false,
+  soundsEnabled: true,
+  defaultSound: "Soft Chime",
+};
+
+function loadSettings() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
+  } catch {
+    /* ignore corrupt data */
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
+function saveSettings(settings) {
+  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+}
+
+function FieldInput({ label, value, onChange }) {
   return (
     <div className={styles.field}>
       <label className={styles.fieldLabel}>{label}</label>
-      <input className={styles.fieldInput} defaultValue={defaultValue} />
+      <input className={styles.fieldInput} value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
 
-function FieldSelect({ label, defaultValue, options }) {
+function FieldSelect({ label, value, options, onChange }) {
   return (
     <div className={styles.field}>
       <label className={styles.fieldLabel}>{label}</label>
-      <select className={styles.fieldSelect} defaultValue={defaultValue}>
+      <select className={styles.fieldSelect} value={value} onChange={(e) => onChange(e.target.value)}>
         {options.map((option) => (
           <option key={option}>{option}</option>
         ))}
@@ -26,14 +53,13 @@ function FieldSelect({ label, defaultValue, options }) {
   );
 }
 
-function Toggle({ label, defaultOn = false }) {
-  const [on, setOn] = useState(defaultOn);
+function Toggle({ label, on, onChange }) {
   return (
     <div className={styles.toggleRow}>
       <span className={styles.toggleLabel}>{label}</span>
       <div
         className={`${styles.toggleTrack} ${on ? styles.toggleOn : ""}`.trim()}
-        onClick={() => setOn(!on)}
+        onClick={() => onChange(!on)}
       >
         <div className={`${styles.toggleCircle} ${on ? styles.toggleCircleOn : ""}`.trim()} />
       </div>
@@ -51,6 +77,33 @@ function Section({ title, children }) {
 }
 
 export function SettingsPanel({ open, onClose }) {
+  const [settings, setSettings] = useState(loadSettings);
+  const [toast, setToast] = useState(false);
+
+  // Reload saved settings when panel opens
+  useEffect(() => {
+    if (open) setSettings(loadSettings());
+  }, [open]);
+
+  const update = useCallback((key, value) => {
+    setSettings((prev) => ({ ...prev, [key]: value }));
+  }, []);
+
+  const handleApply = () => {
+    saveSettings(settings);
+    // Request browser notification permission when enabling desktop notifications
+    if (settings.desktopNotifications && typeof Notification !== "undefined" && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+    setToast(true);
+    setTimeout(() => setToast(false), 2000);
+  };
+
+  const handleCancel = () => {
+    setSettings(loadSettings());
+    onClose();
+  };
+
   return (
     <RightPanel
       open={open}
@@ -60,38 +113,39 @@ export function SettingsPanel({ open, onClose }) {
       icon={<BoltIcon size={14} color="var(--blue)" />}
     >
       <Section title="Profile">
-        <FieldInput label="Name" defaultValue="James" />
+        <FieldInput label="Name" value={settings.name} onChange={(v) => update("name", v)} />
         <div className={styles.fieldRow}>
-          <FieldSelect label="Font" defaultValue="Sans" options={["Sans", "Mono"]} />
-          <FieldSelect label="Contrast" defaultValue="Normal" options={["Normal", "High"]} />
+          <FieldSelect label="Font" value={settings.font} options={["Sans", "Mono"]} onChange={(v) => update("font", v)} />
+          <FieldSelect label="Contrast" value={settings.contrast} options={["Normal", "High"]} onChange={(v) => update("contrast", v)} />
         </div>
       </Section>
 
       <Section title="Behavior">
         <div className={styles.fieldRow}>
-          <FieldInput label="Loop guard" defaultValue="4" />
+          <FieldInput label="Loop guard" value={settings.loopGuard} onChange={(v) => update("loopGuard", v)} />
           <FieldSelect
             label="Rule refresh"
-            defaultValue="Every 10 triggers"
+            value={settings.ruleRefresh}
             options={["Every 10 triggers", "Every 5"]}
+            onChange={(v) => update("ruleRefresh", v)}
           />
         </div>
       </Section>
 
       <Section title="Notifications">
-        <Toggle label="Desktop notifications" />
-        <Toggle label="Sounds enabled" defaultOn />
+        <Toggle label="Desktop notifications" on={settings.desktopNotifications} onChange={(v) => update("desktopNotifications", v)} />
+        <Toggle label="Sounds enabled" on={settings.soundsEnabled} onChange={(v) => update("soundsEnabled", v)} />
       </Section>
 
       <Section title="Sounds">
-        <FieldSelect label="Default sound" defaultValue="Soft Chime" options={["Soft Chime", "Ping", "None"]} />
+        <FieldSelect label="Default sound" value={settings.defaultSound} options={["Soft Chime", "Ping", "None"]} onChange={(v) => update("defaultSound", v)} />
       </Section>
 
       <div className={styles.actions}>
-        <button type="button" className={styles.cancelBtn} onClick={onClose}>
+        <button type="button" className={styles.cancelBtn} onClick={handleCancel}>
           Cancel
         </button>
-        <button type="button" className={styles.applyBtn}>
+        <button type="button" className={styles.applyBtn} onClick={handleApply}>
           <div className={styles.shimmerOverlay} />
           <span className={styles.applyContent}>
             <BoltIcon size={11} color="#FFFFFF" glow={false} />
@@ -99,7 +153,10 @@ export function SettingsPanel({ open, onClose }) {
           </span>
         </button>
       </div>
+
+      {toast && (
+        <div className={styles.toast}>Settings saved</div>
+      )}
     </RightPanel>
   );
 }
-
