@@ -234,7 +234,7 @@ def _open_agent_terminal(tmux_session: str) -> None:
     # Tag the tab title with a DuckDome marker so we can close only windows
     # opened by DuckDome during shutdown.
     attach_cmd = (
-        f"printf '\\033]0;{marker}\\007'; "
+        f"printf '\\033]0;%s\\007' {shlex.quote(marker)}; "
         f"tmux attach-session -t {shlex.quote(tmux_session)}; "
         "exit"
     )
@@ -256,13 +256,14 @@ def _close_agent_terminal(tmux_session: str) -> None:
     if sys.platform != "darwin":
         return
     marker = f"DuckDome:{tmux_session}"
+    marker_literal = json.dumps(marker)
     script = f'''
 tell application "Terminal"
   repeat with w in windows
     try
       repeat with t in tabs of w
         set tabName to name of t
-        if tabName contains "{marker}" then
+        if tabName contains {marker_literal} then
           close t
         end if
       end repeat
