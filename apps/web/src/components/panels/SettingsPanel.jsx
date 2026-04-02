@@ -1,8 +1,28 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { BoltIcon } from "../icons";
 import { SectionLabel } from "../primitives";
 import { RightPanel } from "./RightPanel";
 import styles from "./SettingsPanel.module.css";
+
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
+
+async function fetchSettings() {
+  try {
+    const r = await fetch(`${API_BASE}/api/settings`);
+    if (r.ok) return r.json();
+  } catch { /* ignore */ }
+  return { show_agent_windows: false };
+}
+
+async function patchSettings(patch) {
+  try {
+    await fetch(`${API_BASE}/api/settings`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    });
+  } catch { /* ignore */ }
+}
 
 function FieldInput({ label, defaultValue }) {
   return (
@@ -26,14 +46,23 @@ function FieldSelect({ label, defaultValue, options }) {
   );
 }
 
-function Toggle({ label, defaultOn = false }) {
-  const [on, setOn] = useState(defaultOn);
+function Toggle({ label, defaultOn = false, on: controlledOn, onChange }) {
+  const [internalOn, setInternalOn] = useState(defaultOn);
+  const isControlled = controlledOn !== undefined;
+  const on = isControlled ? controlledOn : internalOn;
+  const handleClick = () => {
+    if (isControlled) {
+      onChange?.(!on);
+    } else {
+      setInternalOn(!internalOn);
+    }
+  };
   return (
     <div className={styles.toggleRow}>
       <span className={styles.toggleLabel}>{label}</span>
       <div
         className={`${styles.toggleTrack} ${on ? styles.toggleOn : ""}`.trim()}
-        onClick={() => setOn(!on)}
+        onClick={handleClick}
       >
         <div className={`${styles.toggleCircle} ${on ? styles.toggleCircleOn : ""}`.trim()} />
       </div>
@@ -51,6 +80,19 @@ function Section({ title, children }) {
 }
 
 export function SettingsPanel({ open, onClose }) {
+  const [showAgentWindows, setShowAgentWindows] = useState(false);
+
+  useEffect(() => {
+    if (open) {
+      fetchSettings().then((s) => setShowAgentWindows(Boolean(s.show_agent_windows)));
+    }
+  }, [open]);
+
+  const handleShowWindowsToggle = (value) => {
+    setShowAgentWindows(value);
+    patchSettings({ show_agent_windows: value });
+  };
+
   return (
     <RightPanel
       open={open}
@@ -85,6 +127,14 @@ export function SettingsPanel({ open, onClose }) {
 
       <Section title="Sounds">
         <FieldSelect label="Default sound" defaultValue="Soft Chime" options={["Soft Chime", "Ping", "None"]} />
+      </Section>
+
+      <Section title="Agents">
+        <Toggle
+          label="Show agent windows"
+          on={showAgentWindows}
+          onChange={handleShowWindowsToggle}
+        />
       </Section>
 
       <div className={styles.actions}>
