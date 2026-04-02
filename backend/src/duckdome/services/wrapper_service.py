@@ -43,3 +43,6 @@ class WrapperService:
 
     def list_running(self) -> list[str]:
         return self._manager.list_running()
+
+    def set_show_windows(self, visible: bool) -> None:
+        self._manager.set_show_windows(visible)
