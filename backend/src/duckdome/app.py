@@ -121,6 +121,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         tool_approval_service=tool_approval_service,
     )
 
+    # Apply persisted settings to services before routes are ready
+    if settings_store.get("show_agent_windows"):
+        wrapper_service.set_show_windows(True)
+
     # Init routes with dependencies
     settings_mod.init(settings_store, wrapper_service=wrapper_service)
     messages_mod.init(message_service)
