@@ -130,7 +130,12 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     settings_mod.init(settings_store, wrapper_service=wrapper_service)
     messages_mod.init(message_service)
     deliveries_mod.init(message_service)
-    channels_mod.init(channel_service, wrapper_service=wrapper_service)
+    channels_mod.init(
+        channel_service,
+        wrapper_service=wrapper_service,
+        message_store=message_store,
+        ws_manager=ws_manager,
+    )
     triggers_mod.init(trigger_service)
     runners_mod.init(runner_service)
     wrapper_mod.init(wrapper_service, channel_service=channel_service)

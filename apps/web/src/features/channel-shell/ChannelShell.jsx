@@ -3,6 +3,7 @@ import {
   addChannelAgent,
   createChannel,
   createJob,
+  deleteChannel,
   deleteChannelMessage,
   deregisterRuntimeAgent,
   triggerAgent,
@@ -53,7 +54,7 @@ function fireDesktopNotification(message) {
 
   const sender = message.sender || message.author || "Someone";
   const body = message.content || message.text || "";
-  const title = `${sender} in DuckDome`;
+  const title = `${sender} in THE DUCKDOME`;
 
   // Use Electron main-process notifications when available (reliable on Windows)
   if (window.duckdome?.notify) {
@@ -662,6 +663,13 @@ export default function ChannelShell() {
         });
       }
 
+      if (event.type === "channel_deleted" && event.channel_id) {
+        setChannels((prev) => prev.filter((ch) => ch.id !== event.channel_id));
+        if (activeChannelIdRef.current === event.channel_id) {
+          setActiveChannelId("general");
+        }
+      }
+
       if (event.type === "job_updated" && event.job) {
         const normalizedJob = normalizeJobs([event.job])[0];
         if (!normalizedJob?.channel) return;
@@ -834,6 +842,19 @@ export default function ChannelShell() {
     setActiveChannelId(normalized.id);
     setCreateOpen(false);
   };
+
+  const handleDeleteChannel = useCallback(async (channelId) => {
+    if (channelId === "general") return;
+    try {
+      await deleteChannel(channelId);
+      setChannels((prev) => prev.filter((ch) => ch.id !== channelId));
+      if (activeChannelId === channelId) {
+        setActiveChannelId("general");
+      }
+    } catch (err) {
+      console.error("Failed to delete channel:", err);
+    }
+  }, [activeChannelId]);
 
   const handleAddAgent = useCallback(
     async ({ type }) => {
@@ -1070,6 +1091,7 @@ export default function ChannelShell() {
             activeChannel={activeChannelId}
             onSelectChannel={setActiveChannelId}
             onCreateChannel={() => setCreateOpen(true)}
+            onDeleteChannel={handleDeleteChannel}
             onSessionLaunch={() => setSessionLauncherOpen(true)}
             onAddRepo={handleAddRepo}
             onRemoveRepo={handleRemoveRepo}
