@@ -19,7 +19,8 @@ def init(store: SettingsStore, wrapper_service: WrapperService | None = None) ->
 
 
 def _get_store() -> SettingsStore:
-    assert _store is not None
+    if _store is None:
+        raise RuntimeError("Settings router is not initialized")
     return _store
 
 
@@ -36,7 +37,7 @@ def get_settings():
 def patch_settings(body: SettingsPatch):
     store = _get_store()
     if body.show_agent_windows is not None:
-        store.set("show_agent_windows", body.show_agent_windows)
         if _wrapper_service is not None:
             _wrapper_service.set_show_windows(body.show_agent_windows)
+        store.set("show_agent_windows", body.show_agent_windows)
     return store.get_all()

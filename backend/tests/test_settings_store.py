@@ -31,3 +31,12 @@ def test_corrupt_file_falls_back_to_defaults(tmp_path):
     settings_file.write_bytes(b"not valid json {{{{")
     store = SettingsStore(data_dir=tmp_path)
     assert store.get("show_agent_windows") is False
+
+
+def test_wrong_type_is_ignored(tmp_path):
+    import json
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(json.dumps({"show_agent_windows": "true"}))
+    store = SettingsStore(data_dir=tmp_path)
+    # String "true" should be rejected; default (False) should be used
+    assert store.get("show_agent_windows") is False

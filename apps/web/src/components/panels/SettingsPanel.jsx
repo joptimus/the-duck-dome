@@ -15,13 +15,13 @@ async function fetchSettings() {
 }
 
 async function patchSettings(patch) {
-  try {
-    await fetch(`${API_BASE}/api/settings`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    });
-  } catch { /* ignore */ }
+  const r = await fetch(`${API_BASE}/api/settings`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(`PATCH /api/settings failed: ${r.status}`);
+  return r.json();
 }
 
 function FieldInput({ label, defaultValue }) {
@@ -90,7 +90,9 @@ export function SettingsPanel({ open, onClose }) {
 
   const handleShowWindowsToggle = (value) => {
     setShowAgentWindows(value);
-    patchSettings({ show_agent_windows: value });
+    patchSettings({ show_agent_windows: value }).catch(() => {
+      setShowAgentWindows(!value);
+    });
   };
 
   return (
