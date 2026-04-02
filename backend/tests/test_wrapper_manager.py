@@ -187,3 +187,37 @@ def test_deregister_agent_presence_uses_joined_proxy_channel(tmp_path, monkeypat
     assert manager._deregister_agent_presence(agent) is True
     assert captured["url"] == "http://127.0.0.1:8123/api/agents/deregister"
     assert captured["body"] == b'{"channel_id": "general", "agent_type": "codex"}'
+
+
+def test_default_show_windows_is_false(tmp_path):
+    from duckdome.wrapper.manager import AgentProcessManager
+    mgr = AgentProcessManager(data_dir=tmp_path)
+    assert mgr._show_windows is False
+
+
+def test_set_show_windows_updates_flag(tmp_path):
+    from duckdome.wrapper.manager import AgentProcessManager
+    mgr = AgentProcessManager(data_dir=tmp_path)
+    mgr.set_show_windows(True)
+    assert mgr._show_windows is True
+
+
+def test_set_show_windows_calls_open_terminal_for_tmux_agents(tmp_path):
+    from unittest.mock import patch, MagicMock
+    from duckdome.wrapper.manager import AgentProcessManager, AgentProcess
+
+    mgr = AgentProcessManager(data_dir=tmp_path)
+    ap = AgentProcess(agent_type="claude", tmux_session="duckdome-claude")
+    ap.started_at = 1.0
+    with mgr._lock:
+        mgr._agents["claude"] = ap
+
+    with patch("duckdome.wrapper.manager._open_agent_terminal") as mock_open, \
+         patch("duckdome.wrapper.manager._close_agent_terminal") as mock_close, \
+         patch.object(mgr, "_is_alive", return_value=True):
+        mgr.set_show_windows(True)
+        mock_open.assert_called_once_with("duckdome-claude")
+        mock_close.assert_not_called()
+
+        mgr.set_show_windows(False)
+        mock_close.assert_called_once_with("duckdome-claude")
