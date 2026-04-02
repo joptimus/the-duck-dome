@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog, Menu } = require("electron");
+const { app, BrowserWindow, ipcMain, dialog, Menu, Notification } = require("electron");
 const path = require("path");
 
 const DEV_URL = "http://localhost:5173";
@@ -70,6 +70,15 @@ ipcMain.handle("desktop:pick-directory", async (_event, opts = {}) => {
     canceled: result.canceled,
     path: result.filePaths?.[0] || undefined,
   };
+});
+
+ipcMain.handle("desktop:notify", (_event, opts = {}) => {
+  if (!Notification.isSupported()) return;
+  const notif = new Notification({
+    title: opts.title || "DuckDome",
+    body: opts.body || "",
+  });
+  notif.show();
 });
 
 const { startBackend, stopBackend } = require("./backend");

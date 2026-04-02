@@ -21,6 +21,7 @@ import {
   removeRepoSource,
   approveToolRequest,
   denyToolRequest,
+  bootChannel,
 } from "./api";
 import { createWsClient } from "../../api/ws";
 import { mockMessagesByChannelId } from "./mockData";
@@ -36,7 +37,38 @@ import { ScheduleModal } from "../../components/modals/ScheduleModal";
 import CreateChannelModal from "../../components/modals/CreateChannelModal";
 
 const PINNED_MESSAGES_STORAGE_KEY = "duckdome.pinnedMessages";
+const SETTINGS_KEY = "duckdome:settings";
 
+function getDesktopNotificationsEnabled() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return JSON.parse(raw).desktopNotifications === true;
+  } catch { /* ignore */ }
+  return false;
+}
+
+function fireDesktopNotification(message) {
+  if (!getDesktopNotificationsEnabled()) return;
+  if (document.hasFocus()) return;
+
+  const sender = message.sender || message.author || "Someone";
+  const body = message.content || message.text || "";
+  const title = `${sender} in DuckDome`;
+
+  // Use Electron main-process notifications when available (reliable on Windows)
+  if (window.duckdome?.notify) {
+    window.duckdome.notify(title, body);
+    return;
+  }
+
+  // Fallback to browser Notification API
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission === "granted") {
+    new Notification(title, { body, tag: message.id });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission();
+  }
+}
 function normalizeChannels(data) {
   if (!Array.isArray(data)) return [];
   return data.map((item, index) => ({
@@ -80,6 +112,8 @@ function normalizeAgents(data, channelId) {
     open_trigger_count: Number.isFinite(Number(agent.open_trigger_count))
       ? Number(agent.open_trigger_count)
       : null,
+    pid: agent.pid || null,
+    started_at: agent.started_at || null,
   }));
 }
 
@@ -525,7 +559,20 @@ export default function ChannelShell() {
       }
     }
 
-    loadChannelContext();
+    loadChannelContext().then(async () => {
+      if (!activeChannelId || ignore) return;
+      // Boot agents for this channel after context is loaded.
+      try {
+        await bootChannel(activeChannelId);
+      } catch {}
+      // Re-fetch agents to pick up newly registered + working status.
+      if (!ignore) {
+        try {
+          const refreshed = await getChannelAgents(activeChannelId);
+          setAgents(normalizeAgents(refreshed, activeChannelId));
+        } catch {}
+      }
+    });
     return () => {
       ignore = true;
     };
@@ -542,11 +589,24 @@ export default function ChannelShell() {
       const channelId = activeChannelIdRef.current;
 
       if (event.type === "new_message" && event.message) {
+        fireDesktopNotification(event.message);
         const msgChannelId = event.message.channel || event.message.channel_id;
         if (msgChannelId && msgChannelId === channelId) {
           const normalized = normalizeMessages([event.message], channelId);
           setMessagesByChannelId((prev) => {
-            const existing = prev[channelId] || [];
+            let existing = prev[channelId] || [];
+            // Replace optimistic messages from the same sender with the real one.
+            const realMsg = normalized[0];
+            if (realMsg) {
+              // Remove only the oldest optimistic placeholder from the same sender,
+              // not all of them — the user may have sent multiple messages in flight.
+              const firstOptimisticIdx = existing.findIndex(
+                (e) => e.id.startsWith("optimistic-") && e.sender === realMsg.sender,
+              );
+              if (firstOptimisticIdx !== -1) {
+                existing = existing.filter((_, i) => i !== firstOptimisticIdx);
+              }
+            }
             const deduped = normalized.filter(
               (msg) => !existing.some((e) => e.id === msg.id),
             );
@@ -676,6 +736,8 @@ export default function ChannelShell() {
         agent: a.agent_type,
         running: a.status === "working" || a.status === "idle",
         prompt: a.prompt || "",
+        pid: a.pid || null,
+        started_at: a.started_at || null,
       })),
     [mergedAgents],
   );
@@ -901,6 +963,22 @@ export default function ChannelShell() {
     if (!activeChannelId) {
       return Promise.reject(new Error("No active channel selected"));
     }
+
+    // Optimistic update: show message immediately in the timeline.
+    const optimisticId = `optimistic-${Date.now()}`;
+    const optimisticMsg = normalizeMessages(
+      [{ id: optimisticId, sender: "human", text, channel: activeChannelId, time: Date.now() / 1000, reply_to: replyingTo?.id || null }],
+      activeChannelId,
+    )[0];
+    console.log("[onSend] optimistic message:", optimisticMsg);
+    setMessagesByChannelId((prev) => {
+      console.log("[onSend] adding optimistic to state, prev count:", (prev[activeChannelId] || []).length);
+      return {
+        ...prev,
+        [activeChannelId]: [...(prev[activeChannelId] || []), optimisticMsg],
+      };
+    });
+
     return sendChannelMessage({
       channelId: activeChannelId,
       text,

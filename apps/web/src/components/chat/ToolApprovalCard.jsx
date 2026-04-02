@@ -35,7 +35,7 @@ export function ToolApprovalCard({ msg, idx = 0, onApprove, onDeny }) {
   return (
     <div
       className={styles.wrapper}
-      style={{ animation: `fadeUp 0.3s ease ${idx * 0.06}s both` }}
+      style={{ animation: 'fadeUp 0.45s cubic-bezier(0.4, 0, 0.2, 1) both' }}
     >
       {/* Avatar */}
       <div className={styles.avatarCol}>

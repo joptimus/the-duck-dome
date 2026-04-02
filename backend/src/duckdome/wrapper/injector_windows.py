@@ -65,6 +65,10 @@ def _make_key_event(char: str, key_down: bool) -> INPUT_RECORD:
 def inject(text: str, pid: int, delay: float = 0.01) -> bool:
     """Inject text + Enter into the console of the given PID.
 
+    Sends all text key events in a single bulk WriteConsoleInputW call,
+    then waits *delay* seconds before sending Enter so the TUI has time
+    to process the input buffer.
+
     Returns True on success, False on failure.
     """
     kernel32.FreeConsole()
@@ -79,13 +83,19 @@ def inject(text: str, pid: int, delay: float = 0.01) -> bool:
 
         written = ctypes.wintypes.DWORD(0)
 
-        for char in text:
-            down = _make_key_event(char, True)
-            up = _make_key_event(char, False)
-            records = (INPUT_RECORD * 2)(down, up)
-            kernel32.WriteConsoleInputW(handle, records, 2, ctypes.byref(written))
-            if delay > 0:
-                time.sleep(delay)
+        # Build all key-down/key-up pairs for the text in one array.
+        n_records = len(text) * 2
+        RecordArray = INPUT_RECORD * n_records
+        records = RecordArray()
+        for i, char in enumerate(text):
+            records[i * 2] = _make_key_event(char, True)
+            records[i * 2 + 1] = _make_key_event(char, False)
+
+        kernel32.WriteConsoleInputW(handle, records, n_records, ctypes.byref(written))
+
+        # Give the TUI time to process the input buffer before Enter.
+        if delay > 0:
+            time.sleep(delay)
 
         # Press Enter — must include VK_RETURN (0x0D) so TUI apps
         # that check wVirtualKeyCode (not just UnicodeChar) recognize it.
@@ -93,8 +103,8 @@ def inject(text: str, pid: int, delay: float = 0.01) -> bool:
         enter_down.Event.KeyEvent.wVirtualKeyCode = 0x0D
         enter_up = _make_key_event("\r", False)
         enter_up.Event.KeyEvent.wVirtualKeyCode = 0x0D
-        records = (INPUT_RECORD * 2)(enter_down, enter_up)
-        kernel32.WriteConsoleInputW(handle, records, 2, ctypes.byref(written))
+        enter_records = (INPUT_RECORD * 2)(enter_down, enter_up)
+        kernel32.WriteConsoleInputW(handle, enter_records, 2, ctypes.byref(written))
 
         return True
     finally:
