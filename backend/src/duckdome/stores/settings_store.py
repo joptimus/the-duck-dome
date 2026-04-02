@@ -12,6 +12,7 @@ DEFAULTS: dict[str, object] = {
 
 class SettingsStore:
     def __init__(self, data_dir: Path) -> None:
+        Path(data_dir).mkdir(parents=True, exist_ok=True)
         self._file = Path(data_dir) / "settings.json"
         self._lock = Lock()
         self._data: dict[str, object] = {**DEFAULTS}

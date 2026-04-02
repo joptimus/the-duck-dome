@@ -24,3 +24,10 @@ def test_get_all_includes_defaults(tmp_path):
     result = store.get_all()
     assert "show_agent_windows" in result
     assert result["show_agent_windows"] is False
+
+
+def test_corrupt_file_falls_back_to_defaults(tmp_path):
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_bytes(b"not valid json {{{{")
+    store = SettingsStore(data_dir=tmp_path)
+    assert store.get("show_agent_windows") is False
