@@ -271,6 +271,31 @@ end tell
         logger.warning("[%s] could not close Terminal.app window", tmux_session)
 
 
+def _win_set_window_visible(pid: int, visible: bool) -> None:
+    """Show or hide the console window for a process on Windows (no-op on other platforms)."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+    from ctypes import wintypes
+    SW_HIDE = 0
+    SW_SHOW = 5
+    user32 = ctypes.windll.user32
+    found: list[int] = []
+
+    WinEnumProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
+
+    def _cb(hwnd: int, _: int) -> bool:
+        pid_out = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_out))
+        if pid_out.value == pid:
+            found.append(hwnd)
+        return True
+
+    user32.EnumWindows(WinEnumProc(_cb), 0)
+    for hwnd in found:
+        user32.ShowWindow(hwnd, SW_SHOW if visible else SW_HIDE)
+
+
 @dataclass
 class AgentProcess:
     agent_type: str
@@ -313,6 +338,7 @@ class AgentProcessManager:
         self._agents: dict[str, AgentProcess] = {}
         self._starting: set[str] = set()
         self._lock = threading.Lock()
+        self._show_windows: bool = False
 
     @staticmethod
     def _agent_key(agent_type: str, channel_id: str = "") -> str:
@@ -437,6 +463,8 @@ class AgentProcessManager:
                 agent_proc.started_at = time.time()
                 agent_proc.ready_event.set()
                 logger.info("[%s] process started pid=%d", agent_type, proc.pid)
+                if not self._show_windows:
+                    _win_set_window_visible(proc.pid, False)
 
                 # Start console monitor for permission prompt capture (Windows)
                 if self._tool_approval_service is not None:
@@ -506,8 +534,9 @@ class AgentProcessManager:
                 "[%s] tmux session started: %s (pid=%s)", agent_type, session, agent_proc.pid
             )
 
-            # Open a visible terminal window attached to this tmux session
-            _open_agent_terminal(session)
+            # Open a visible terminal window attached to this tmux session (if enabled)
+            if self._show_windows:
+                _open_agent_terminal(session)
 
             # Poll until the session exits
             while not agent_proc.stop_event.is_set():
@@ -629,6 +658,22 @@ class AgentProcessManager:
                 "pid": ap.pid,
                 "started_at": ap.started_at,
             }
+
+    def set_show_windows(self, visible: bool) -> None:
+        """Update window visibility flag and apply immediately to all running agents."""
+        self._show_windows = visible
+        with self._lock:
+            agents = list(self._agents.items())
+        for key, ap in agents:
+            if not self._is_alive(key):
+                continue
+            if ap.tmux_session:
+                if visible:
+                    _open_agent_terminal(ap.tmux_session)
+                else:
+                    _close_agent_terminal(ap.tmux_session)
+            elif ap.pid is not None:
+                _win_set_window_visible(ap.pid, visible)
 
     def trigger_agent(self, agent_type: str, sender: str, text: str, channel: str) -> bool:
         """Trigger the agent for a specific channel.

@@ -4,6 +4,26 @@ import { SectionLabel } from "../primitives";
 import { RightPanel } from "./RightPanel";
 import styles from "./SettingsPanel.module.css";
 
+const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
+
+async function fetchSettings() {
+  try {
+    const r = await fetch(`${API_BASE}/api/settings`);
+    if (r.ok) return r.json();
+  } catch { /* ignore */ }
+  return { show_agent_windows: false };
+}
+
+async function patchSettings(patch) {
+  const r = await fetch(`${API_BASE}/api/settings`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(patch),
+  });
+  if (!r.ok) throw new Error(`PATCH /api/settings failed: ${r.status}`);
+  return r.json();
+}
+
 const SETTINGS_KEY = "duckdome:settings";
 
 const DEFAULT_SETTINGS = {
@@ -79,15 +99,26 @@ function Section({ title, children }) {
 export function SettingsPanel({ open, onClose }) {
   const [settings, setSettings] = useState(loadSettings);
   const [toast, setToast] = useState(false);
+  const [showAgentWindows, setShowAgentWindows] = useState(false);
 
   // Reload saved settings when panel opens
   useEffect(() => {
-    if (open) setSettings(loadSettings());
+    if (open) {
+      setSettings(loadSettings());
+      fetchSettings().then((s) => setShowAgentWindows(Boolean(s.show_agent_windows)));
+    }
   }, [open]);
 
   const update = useCallback((key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   }, []);
+
+  const handleShowWindowsToggle = (value) => {
+    setShowAgentWindows(value);
+    patchSettings({ show_agent_windows: value }).catch(() => {
+      setShowAgentWindows(!value);
+    });
+  };
 
   const handleApply = () => {
     saveSettings(settings);
@@ -139,6 +170,14 @@ export function SettingsPanel({ open, onClose }) {
 
       <Section title="Sounds">
         <FieldSelect label="Default sound" value={settings.defaultSound} options={["Soft Chime", "Ping", "None"]} onChange={(v) => update("defaultSound", v)} />
+      </Section>
+
+      <Section title="Agents">
+        <Toggle
+          label="Show agent windows"
+          on={showAgentWindows}
+          onChange={handleShowWindowsToggle}
+        />
       </Section>
 
       <div className={styles.actions}>
