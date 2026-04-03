@@ -97,9 +97,20 @@ class AgentBridge(ABC):
         self._listeners.setdefault(event_type, []).append(callback)
 
     def _emit(self, event_type: str, event: object) -> None:
-        """Emit an event to all registered listeners."""
+        """Emit an event to all registered listeners.
+
+        Each listener is called inside a try/except so a failing callback
+        cannot crash the bridge's read loop or other transports.
+        """
         for cb in self._listeners.get(event_type, []):
-            cb(event)
+            try:
+                cb(event)
+            except Exception:
+                import logging
+                logging.getLogger(__name__).exception(
+                    "Bridge event listener failed: event_type=%s listener=%r",
+                    event_type, cb,
+                )
 
     # Convenience constants for event types
     TOOL_CALL = "tool_call"

@@ -415,14 +415,14 @@ For Codex, the **app-server WebSocket protocol** is the right integration point,
 
 ### Codex Integration Plan
 
-#### Phase C1: WebSocket Client
+#### Phase C1: stdio JSON-RPC Client (IMPLEMENTED)
 
-**Goal:** Connect DuckDome to Codex's app-server via WebSocket.
+**Goal:** Connect DuckDome to Codex's app-server via stdio JSON-RPC.
 
-**Approach:**
-- Spawn `codex-app-server --listen ws://127.0.0.1:{port}` instead of raw `codex` CLI
-- Connect a WebSocket client from DuckDome backend to the app-server
-- Parse JSON-RPC notifications into DuckDome's internal event model
+**Approach (as implemented in `codex_bridge.py`):**
+- Spawn `codex app-server --listen stdio://` with MCP URL and safe-tool approval flags
+- Read/write JSON-RPC messages on stdin/stdout
+- Parse JSON-RPC notifications into DuckDome's unified event model via `AgentBridge.on(event_type, callback)`
 
 #### Phase C2: Thread Management
 
@@ -560,12 +560,12 @@ Uses HTTP hooks + keystroke injection:
 
 ### CodexBridge Implementation
 
-Uses app-server WebSocket protocol:
+Uses app-server stdio JSON-RPC protocol:
 
 - **`send_prompt()`** → `turn/start` JSON-RPC request (fully native, no keystroke injection)
 - **`approve()`/`deny()`** → respond to `CommandExecutionRequestApproval` JSON-RPC server request
-- **Events** → received via WebSocket notifications
-- **`start()`** → spawn `codex-app-server --listen ws://127.0.0.1:{port}`, connect WebSocket
+- **Events** → received via JSON-RPC notifications on stdout, dispatched via `AgentBridge.on(event_type, callback)`
+- **`start()`** → spawn `codex app-server --listen stdio://` with MCP URL and safe-tool flags, read/write JSON-RPC on stdin/stdout
 - **`interrupt()`** → `turn/interrupt` JSON-RPC request
 
 ### Unified Event Model

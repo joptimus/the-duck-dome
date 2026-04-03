@@ -27,6 +27,18 @@ from duckdome.bridges.events import (
     ToolResultEvent,
 )
 
+# Codex notification methods that signal subagent lifecycle.
+_SUBAGENT_START_METHODS = frozenset({
+    "collabAgentSpawnBegin",
+    "subagent/started",
+    "subagent/start",
+})
+_SUBAGENT_STOP_METHODS = frozenset({
+    "collabAgentSpawnEnd",
+    "subagent/stopped",
+    "subagent/stop",
+})
+
 logger = logging.getLogger(__name__)
 
 # JSON-RPC helpers --------------------------------------------------------
@@ -86,7 +98,18 @@ class CodexBridge(AgentBridge):
         if codex_bin is None:
             raise FileNotFoundError("codex binary not found on PATH")
 
-        args = [codex_bin, "app-server", "--listen", "stdio://"]
+        args = [codex_bin]
+
+        # Pass MCP URL and startup-safe tool approvals (matches legacy launcher)
+        if config.mcp_url:
+            args.extend(["-c", f'mcp_servers.duckdome.url="{config.mcp_url}"'])
+            for tool_name in ("chat_join", "chat_read", "chat_rules", "chat_send"):
+                args.extend([
+                    "-c",
+                    f'mcp_servers.duckdome.tools.{tool_name}.approval_mode="approve"',
+                ])
+
+        args.extend(["app-server", "--listen", "stdio://"])
 
         env = os.environ.copy()
         env.update(config.extra.get("env", {}))
@@ -106,27 +129,32 @@ class CodexBridge(AgentBridge):
         # Start background reader
         self._read_task = asyncio.create_task(self._read_loop())
 
-        # Initialize the app-server protocol
-        resp = await self._request("initialize", {
-            "clientInfo": {
-                "name": "duckdome",
-                "title": "DuckDome",
-                "version": "0.1.0",
-            },
-            "capabilities": {
-                "experimentalApi": True,
-            },
-        })
-        await self._notify("initialized")
-        logger.info("Codex app-server initialized for agent %s", agent_id)
+        try:
+            # Initialize the app-server protocol
+            await self._request("initialize", {
+                "clientInfo": {
+                    "name": "duckdome",
+                    "title": "DuckDome",
+                    "version": "0.1.0",
+                },
+                "capabilities": {
+                    "experimentalApi": True,
+                },
+            })
+            await self._notify("initialized")
+            logger.info("Codex app-server initialized for agent %s", agent_id)
 
-        # Start a thread
-        thread_resp = await self._request("thread/start", {
-            "cwd": config.cwd,
-        })
-        thread = thread_resp.get("thread", {})
-        self._thread_id = thread.get("id") or thread.get("threadId")
-        logger.info("Codex thread started: %s", self._thread_id)
+            # Start a thread
+            thread_resp = await self._request("thread/start", {
+                "cwd": config.cwd,
+            })
+            thread = thread_resp.get("thread", {})
+            self._thread_id = thread.get("id") or thread.get("threadId")
+            logger.info("Codex thread started: %s", self._thread_id)
+        except Exception:
+            logger.exception("Codex init failed for agent %s; cleaning up", agent_id)
+            await self.stop()
+            raise
 
         self._status = AgentStatus.IDLE
         self._emit(self.STATUS_CHANGE, StatusChangeEvent(
@@ -154,9 +182,15 @@ class CodexBridge(AgentBridge):
                 proc.stdin.close()
             try:
                 proc.terminate()
-                proc.wait(timeout=2)
-            except Exception:
+                loop = asyncio.get_running_loop()
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, proc.wait),
+                    timeout=2,
+                )
+            except (asyncio.TimeoutError, Exception):
                 proc.kill()
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, proc.wait)
 
         self._status = AgentStatus.OFFLINE
         if self._config:
@@ -435,6 +469,26 @@ class CodexBridge(AgentBridge):
                     channel_id=channel_id,
                     error=params.get("message", "Unknown error"),
                     details=params.get("codexErrorInfo"),
+                ))
+
+            case _ if method in _SUBAGENT_START_METHODS:
+                self._emit(self.SUBAGENT, SubagentEvent(
+                    agent_id=self._agent_id,
+                    agent_type="codex",
+                    channel_id=channel_id,
+                    subagent_id=params.get("subagentId") or params.get("id", ""),
+                    subagent_type=params.get("subagentType") or params.get("type", ""),
+                    started=True,
+                ))
+
+            case _ if method in _SUBAGENT_STOP_METHODS:
+                self._emit(self.SUBAGENT, SubagentEvent(
+                    agent_id=self._agent_id,
+                    agent_type="codex",
+                    channel_id=channel_id,
+                    subagent_id=params.get("subagentId") or params.get("id", ""),
+                    subagent_type=params.get("subagentType") or params.get("type", ""),
+                    started=False,
                 ))
 
             case _:
