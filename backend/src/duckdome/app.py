@@ -19,6 +19,7 @@ from duckdome.routes import repos as repos_mod
 from duckdome.routes import websocket as websocket_mod
 from duckdome.routes import wrapper as wrapper_mod
 from duckdome.routes import settings as settings_mod
+from duckdome.bridges import hooks_router
 from duckdome.services.wrapper_service import WrapperService
 from duckdome.services.channel_service import ChannelService
 from duckdome.services.job_service import JobService
@@ -165,5 +166,6 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     app.include_router(repos_mod.router)
     app.include_router(websocket_mod.router)
     app.include_router(settings_mod.router)
+    app.include_router(hooks_router)
 
     return app
