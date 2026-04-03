@@ -21,6 +21,14 @@ from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+from duckdome.bridges.base import AgentBridge, AgentConfig
+from duckdome.bridges.codex_bridge import CodexBridge
+from duckdome.bridges.claude_bridge import ClaudeBridge
+from duckdome.bridges.events import (
+    AgentStatus,
+    ApprovalRequestEvent,
+    StatusChangeEvent,
+)
 from duckdome.wrapper.console_monitor import ConsoleMonitor
 from duckdome.wrapper.injector import inject
 from duckdome.wrapper.mcp_config import generate_agent_token, generate_gemini_settings, generate_mcp_config
@@ -369,6 +377,7 @@ class AgentProcessManager:
         self._tool_approval_service = tool_approval_service
         self._ws_manager = ws_manager
         self._agents: dict[str, AgentProcess] = {}
+        self._bridges: dict[str, AgentBridge] = {}
         self._starting: set[str] = set()
         self._lock = threading.Lock()
         self._show_windows: bool = False
@@ -382,6 +391,86 @@ class AgentProcessManager:
         queue file name.
         """
         return f"{agent_type}--{channel_id}" if channel_id else agent_type
+
+    @staticmethod
+    def _use_bridge(agent_type: str) -> bool:
+        """Return True if this agent type should use the new bridge path."""
+        return agent_type in ("codex",)
+
+    def _create_bridge(self, agent_type: str, channel_id: str) -> AgentBridge:
+        if agent_type == "codex":
+            return CodexBridge()
+        if agent_type == "claude":
+            return ClaudeBridge(receiver_port=self._app_port)
+        raise ValueError(f"No bridge for agent type: {agent_type}")
+
+    def _connect_bridge_events(self, bridge: AgentBridge, key: str) -> None:
+        """Wire bridge events to the existing WebSocket broadcast + approval systems."""
+
+        def _on_status_change(event: StatusChangeEvent) -> None:
+            if self._ws_manager:
+                self._ws_manager.broadcast_sync({
+                    "type": "agent_status_change",
+                    "agent_id": f"{event.channel_id}:{event.agent_type}",
+                    "status": event.status.value,
+                })
+
+        def _on_approval_request(event: ApprovalRequestEvent) -> None:
+            if self._tool_approval_service is None:
+                return
+            result = self._tool_approval_service.request(
+                agent=event.agent_type,
+                tool=event.tool_name,
+                arguments=event.tool_input,
+                channel=event.channel_id,
+            )
+            # If policy auto-resolved, respond immediately
+            if result.status == "approved":
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(bridge.approve(event.approval_id))
+                except RuntimeError:
+                    # No running loop — fire and forget via new loop
+                    asyncio.run(bridge.approve(event.approval_id))
+            elif result.status == "denied":
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(bridge.deny(event.approval_id, "Denied by policy"))
+                except RuntimeError:
+                    asyncio.run(bridge.deny(event.approval_id, "Denied by policy"))
+            # If "pending", the UI will call approve/deny via the tool approval route
+
+        bridge.on(bridge.STATUS_CHANGE, _on_status_change)
+        bridge.on(bridge.APPROVAL_REQUEST, _on_approval_request)
+
+    async def _start_agent_bridge(
+        self,
+        agent_type: str,
+        cwd: str | None,
+        channel_id: str,
+    ) -> bool:
+        """Start an agent using the bridge path (async)."""
+        key = self._agent_key(agent_type, channel_id)
+        bridge = self._create_bridge(agent_type, channel_id)
+        self._connect_bridge_events(bridge, key)
+
+        config = AgentConfig(
+            agent_type=agent_type,
+            channel_id=channel_id or "general",
+            cwd=_resolve_launch_cwd(cwd),
+            mcp_url=self._mcp_url,
+            extra={
+                "mcp_config_path": str(self._config_dir / f"{agent_type}-mcp.json"),
+            },
+        )
+
+        await bridge.start(agent_id=key, config=config)
+        with self._lock:
+            self._bridges[key] = bridge
+        logger.info("[%s] started via bridge", key)
+        return True
 
     def start_agent(
         self,
@@ -400,12 +489,30 @@ class AgentProcessManager:
             if key in self._starting:
                 logger.info("[%s] start already in progress", key)
                 return False
+            if key in self._bridges:
+                logger.info("[%s] already running via bridge", key)
+                return False
             if key in self._agents and self._is_alive(key):
                 logger.info("[%s] already running (pid=%s)", key, self._agents[key].pid)
                 return False
             self._starting.add(key)
 
         try:
+            if self._use_bridge(agent_type):
+                import asyncio
+                try:
+                    loop = asyncio.get_running_loop()
+                    # Already in async context — schedule and wait
+                    future = asyncio.ensure_future(
+                        self._start_agent_bridge(agent_type, cwd, channel_id)
+                    )
+                    # Can't await from sync — the caller will see it start async
+                    return True
+                except RuntimeError:
+                    # No running loop — run synchronously
+                    return asyncio.run(
+                        self._start_agent_bridge(agent_type, cwd, channel_id)
+                    )
             return self._start_agent_inner(agent_type, cwd, auto_restart, channel_id=channel_id)
         except Exception:
             logger.exception("[%s] start_agent failed", key)
@@ -634,6 +741,20 @@ class AgentProcessManager:
     def stop_agent(self, agent_type: str, channel_id: str = "") -> bool:
         """Stop a persistent agent process."""
         key = self._agent_key(agent_type, channel_id)
+
+        # Check bridge path first
+        with self._lock:
+            bridge = self._bridges.pop(key, None)
+        if bridge is not None:
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(bridge.stop())
+            except RuntimeError:
+                asyncio.run(bridge.stop())
+            logger.info("[%s] stopped via bridge", key)
+            return True
+
         with self._lock:
             agent_proc = self._agents.pop(key, None)
 
@@ -665,10 +786,10 @@ class AgentProcessManager:
         return True
 
     def stop_all(self) -> None:
-        """Stop all agent processes."""
+        """Stop all agent processes (both legacy and bridge-managed)."""
         with self._lock:
-            keys = list(self._agents.keys())
-        for key in keys:
+            keys = list(self._agents.keys()) + list(self._bridges.keys())
+        for key in set(keys):
             # Keys are "agent_type--channel_id" or just "agent_type"
             parts = key.split("--", 1)
             self.stop_agent(parts[0], parts[1] if len(parts) > 1 else "")
@@ -676,11 +797,15 @@ class AgentProcessManager:
     def is_running(self, agent_type: str, channel_id: str = "") -> bool:
         key = self._agent_key(agent_type, channel_id)
         with self._lock:
+            if key in self._bridges:
+                return True
             return key in self._agents and self._is_alive(key)
 
     def list_running(self) -> list[str]:
         with self._lock:
-            return [key for key in self._agents if self._is_alive(key)]
+            legacy = [key for key in self._agents if self._is_alive(key)]
+            bridged = list(self._bridges.keys())
+            return legacy + bridged
 
     def get_agent_details(self, agent_type: str, channel_id: str = "") -> dict | None:
         """Return pid and started_at for a running agent."""
@@ -718,16 +843,29 @@ class AgentProcessManager:
 
         If a per-channel process exists, uses it. Otherwise starts one.
         *cwd* is passed through to start_agent when the process is first created.
+        Bridge-managed agents use send_prompt() instead of queue files.
         """
-        from duckdome.wrapper.queue import write_queue_entry
-
         key = self._agent_key(agent_type, channel)
         if not self.is_running(agent_type, channel):
-            # Auto-start a per-channel process.
-            # start_agent launches threads in the background; the queue
-            # watcher will pick up the entry once ready_event fires.
             self.start_agent(agent_type, cwd=cwd, channel_id=channel)
 
+        # Bridge path: send prompt directly
+        with self._lock:
+            bridge = self._bridges.get(key)
+        if bridge is not None:
+            prompt = _build_trigger_prompt(
+                agent_type=agent_type, channel=channel, sender=sender, text=text,
+            )
+            import asyncio
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(bridge.send_prompt(prompt, channel, sender))
+            except RuntimeError:
+                asyncio.run(bridge.send_prompt(prompt, channel, sender))
+            return True
+
+        # Legacy path: write to queue file
+        from duckdome.wrapper.queue import write_queue_entry
         write_queue_entry(self._data_dir, key, sender, text, channel)
 
         # Register agent in channel (triggers "joined" system message)
