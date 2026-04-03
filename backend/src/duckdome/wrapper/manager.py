@@ -186,32 +186,21 @@ def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: s
     if agent_type == "claude":
         prompt = (
             f'Use DuckDome MCP: chat_join(channel="{normalized_channel}", agent_type="claude"), '
-            f'then chat_read(channel="{normalized_channel}"). '
-            f'Always pass sender="claude" in chat_send and chat_read calls. '
+            f'then chat_read(channel="{normalized_channel}") — '
+            f'you were mentioned, take appropriate action. '
+            f'Always pass sender="claude" in chat_send and chat_read calls.'
         )
         if normalized_text:
-            prompt += f"{normalized_sender} asks: {normalized_text} "
-        else:
-            prompt += f"Triggered by {normalized_sender}. "
-        prompt += "Do the work, then reply with chat_send."
+            prompt += f" {normalized_sender} asks: {normalized_text}"
         return prompt
 
     prompt = (
-        f'Use the chat_join tool with channel="{normalized_channel}" and agent_type="{agent_type}", '
-        "then use chat_read to get the latest messages in context. "
-        f'You were triggered by {normalized_sender}. '
+        f'chat_join(channel="{normalized_channel}", agent_type="{agent_type}"), '
+        f'then chat_read(channel="{normalized_channel}") — '
+        f'you were mentioned, take appropriate action.'
     )
-
     if normalized_text:
-        prompt += f"Requested work: {normalized_text}\n\n"
-    else:
-        prompt += "Requested work was not included in the queue entry.\n\n"
-
-    prompt += (
-        "Complete the requested work before replying. "
-        "If the task requires tools, use them. "
-        "When you have a substantive update or result, send it with chat_send."
-    )
+        prompt += f" {normalized_sender} asks: {normalized_text}"
     return prompt
 
 
@@ -271,8 +260,50 @@ end tell
         logger.warning("[%s] could not close Terminal.app window", tmux_session)
 
 
+def _win_get_process_tree_pids(root_pid: int) -> set[int]:
+    """Return *root_pid* plus all its descendant PIDs on Windows.
+
+    Uses WMI via ``wmic`` (available on all Windows versions) to walk the
+    process tree without requiring ``psutil``.
+    """
+    pids: set[int] = {root_pid}
+    if sys.platform != "win32":
+        return pids
+    try:
+        # Build parent→children map from wmic
+        out = subprocess.check_output(
+            ["wmic", "process", "get", "ProcessId,ParentProcessId", "/format:csv"],
+            text=True, creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        children: dict[int, list[int]] = {}
+        for line in out.strip().splitlines():
+            parts = line.strip().split(",")
+            if len(parts) < 3:
+                continue
+            try:
+                ppid, cpid = int(parts[1]), int(parts[2])
+            except ValueError:
+                continue
+            children.setdefault(ppid, []).append(cpid)
+        # BFS from root
+        queue = [root_pid]
+        while queue:
+            p = queue.pop()
+            for c in children.get(p, []):
+                if c not in pids:
+                    pids.add(c)
+                    queue.append(c)
+    except Exception:
+        pass
+    return pids
+
+
 def _win_set_window_visible(pid: int, visible: bool) -> None:
-    """Show or hide the console window for a process on Windows (no-op on other platforms)."""
+    """Show or hide the console window for a process on Windows (no-op on other platforms).
+
+    Searches windows owned by the process AND all its child processes
+    (the console window is often owned by conhost.exe, a child of the agent).
+    """
     if sys.platform != "win32":
         return
     import ctypes
@@ -280,6 +311,8 @@ def _win_set_window_visible(pid: int, visible: bool) -> None:
     SW_HIDE = 0
     SW_SHOW = 5
     user32 = ctypes.windll.user32
+
+    target_pids = _win_get_process_tree_pids(pid)
     found: list[int] = []
 
     WinEnumProc = ctypes.WINFUNCTYPE(ctypes.c_bool, wintypes.HWND, wintypes.LPARAM)
@@ -287,7 +320,7 @@ def _win_set_window_visible(pid: int, visible: bool) -> None:
     def _cb(hwnd: int, _: int) -> bool:
         pid_out = wintypes.DWORD()
         user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid_out))
-        if pid_out.value == pid:
+        if pid_out.value in target_pids:
             found.append(hwnd)
         return True
 
@@ -464,6 +497,8 @@ class AgentProcessManager:
                 agent_proc.ready_event.set()
                 logger.info("[%s] process started pid=%d", agent_type, proc.pid)
                 if not self._show_windows:
+                    # Brief delay so the console window is created before we hide it
+                    time.sleep(0.5)
                     _win_set_window_visible(proc.pid, False)
 
                 # Start console monitor for permission prompt capture (Windows)
@@ -675,10 +710,14 @@ class AgentProcessManager:
             elif ap.pid is not None:
                 _win_set_window_visible(ap.pid, visible)
 
-    def trigger_agent(self, agent_type: str, sender: str, text: str, channel: str) -> bool:
+    def trigger_agent(
+        self, agent_type: str, sender: str, text: str, channel: str,
+        cwd: str | None = None,
+    ) -> bool:
         """Trigger the agent for a specific channel.
 
         If a per-channel process exists, uses it. Otherwise starts one.
+        *cwd* is passed through to start_agent when the process is first created.
         """
         from duckdome.wrapper.queue import write_queue_entry
 
@@ -687,7 +726,7 @@ class AgentProcessManager:
             # Auto-start a per-channel process.
             # start_agent launches threads in the background; the queue
             # watcher will pick up the entry once ready_event fires.
-            self.start_agent(agent_type, channel_id=channel)
+            self.start_agent(agent_type, cwd=cwd, channel_id=channel)
 
         write_queue_entry(self._data_dir, key, sender, text, channel)
 

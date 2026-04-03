@@ -37,8 +37,8 @@ class WrapperService:
     def stop_all(self) -> None:
         self._manager.stop_all()
 
-    def trigger(self, agent_type: str, sender: str, text: str, channel: str) -> bool:
-        return self._manager.trigger_agent(agent_type, sender, text, channel)
+    def trigger(self, agent_type: str, sender: str, text: str, channel: str, cwd: str | None = None) -> bool:
+        return self._manager.trigger_agent(agent_type, sender, text, channel, cwd=cwd)
 
     def is_running(self, agent_type: str, channel_id: str = "") -> bool:
         return self._manager.is_running(agent_type, channel_id=channel_id)

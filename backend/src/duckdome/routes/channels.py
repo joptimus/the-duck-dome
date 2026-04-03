@@ -1,21 +1,37 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from duckdome.services.channel_service import ChannelService
 from duckdome.services.wrapper_service import WrapperService
+from duckdome.stores.message_store import MessageStore
+from duckdome.ws.events import CHANNEL_DELETED
+
+if TYPE_CHECKING:
+    from duckdome.ws.manager import ConnectionManager
 
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 _service: ChannelService | None = None
 _wrapper_service: WrapperService | None = None
+_message_store: MessageStore | None = None
+_ws: ConnectionManager | None = None
 
 
-def init(service: ChannelService, wrapper_service: WrapperService | None = None) -> None:
-    global _service, _wrapper_service
+def init(
+    service: ChannelService,
+    wrapper_service: WrapperService | None = None,
+    message_store: MessageStore | None = None,
+    ws_manager: ConnectionManager | None = None,
+) -> None:
+    global _service, _wrapper_service, _message_store, _ws
     _service = service
     _wrapper_service = wrapper_service
+    _message_store = message_store
+    _ws = ws_manager
 
 
 def _get_service() -> ChannelService:
@@ -58,6 +74,24 @@ def get_channel(channel_id: str):
     if ch is None:
         raise HTTPException(status_code=404, detail="Channel not found")
     return ch.model_dump()
+
+
+@router.delete("/{channel_id}", status_code=204)
+def delete_channel(channel_id: str):
+    svc = _get_service()
+    try:
+        deleted = svc.delete_channel(channel_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Channel not found")
+    # Clean up messages for the deleted channel
+    if _message_store:
+        _message_store.delete_by_channel(channel_id)
+    # Broadcast deletion to connected clients
+    if _ws:
+        _ws.broadcast_sync({"type": CHANNEL_DELETED, "channel_id": channel_id})
+    return None
 
 
 @router.get("/{channel_id}/agents")

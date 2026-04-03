@@ -75,8 +75,9 @@ ipcMain.handle("desktop:pick-directory", async (_event, opts = {}) => {
 ipcMain.handle("desktop:notify", (_event, opts = {}) => {
   if (!Notification.isSupported()) return;
   const notif = new Notification({
-    title: opts.title || "DuckDome",
+    title: opts.title || "THE DUCKDOME",
     body: opts.body || "",
+    icon: path.join(__dirname, "..", "..", "public", "img", "duckdome_icon.png"),
   });
   notif.show();
 });

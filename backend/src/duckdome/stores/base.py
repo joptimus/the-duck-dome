@@ -29,3 +29,6 @@ class BaseChannelStore(ABC):
 
     @abstractmethod
     def remove_agent(self, agent_id: str) -> bool: ...
+
+    @abstractmethod
+    def delete_channel(self, channel_id: str) -> bool: ...
