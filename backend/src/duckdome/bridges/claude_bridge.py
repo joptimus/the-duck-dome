@@ -79,11 +79,17 @@ class ClaudeBridge(AgentBridge):
         # Register ourselves as the handler for this agent's hooks
         register_hook_handler(agent_id, self._handle_hook)
 
-        # Build launch command
+        # Build launch command (match legacy launcher in providers.py)
         mcp_config_path = config.extra.get("mcp_config_path", "")
         cmd = [claude_bin]
         if mcp_config_path:
-            cmd.extend(["--mcp-config", str(mcp_config_path)])
+            cmd.extend([
+                "--mcp-config", str(mcp_config_path),
+                "--strict-mcp-config",
+            ])
+            # Allow DuckDome MCP tools explicitly
+            for tool_name in ("chat_join", "chat_read", "chat_rules", "chat_send"):
+                cmd.extend(["--allowedTools", f"mcp__duckdome__{tool_name}"])
 
         env = os.environ.copy()
         env.update(config.extra.get("env", {}))

@@ -395,7 +395,7 @@ class AgentProcessManager:
     @staticmethod
     def _use_bridge(agent_type: str) -> bool:
         """Return True if this agent type should use the new bridge path."""
-        return agent_type in ("codex",)
+        return agent_type in ("codex", "claude")
 
     def _create_bridge(self, agent_type: str, channel_id: str) -> AgentBridge:
         if agent_type == "codex":
