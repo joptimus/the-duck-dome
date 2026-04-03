@@ -1,6 +1,7 @@
 """Tests for the bridges package (AgentBridge, CodexBridge, ClaudeBridge, hook receiver, manager routing)."""
 from __future__ import annotations
 
+import asyncio
 import threading
 from unittest.mock import MagicMock
 
@@ -457,3 +458,54 @@ class TestManagerBridgeRouting:
         call_args = ws.broadcast_sync.call_args[0][0]
         assert call_args["type"] == "agent_status_change"
         assert call_args["status"] == "working"
+
+    def test_sync_manager_routes_bridge_calls_through_dedicated_loop(self, tmp_path, monkeypatch):
+        class _FakeBridge(AgentBridge):
+            def __init__(self):
+                super().__init__()
+                self.started = False
+                self.stopped = False
+                self.sent_prompts = []
+                self.loop_ids = {}
+
+            async def start(self, agent_id: str, config: AgentConfig) -> None:
+                self.started = True
+                self.loop_ids["start"] = id(asyncio.get_running_loop())
+
+            async def stop(self) -> None:
+                self.stopped = True
+                self.loop_ids["stop"] = id(asyncio.get_running_loop())
+
+            async def send_prompt(self, text: str, channel_id: str, sender: str) -> None:
+                self.sent_prompts.append((text, channel_id, sender))
+                self.loop_ids["send_prompt"] = id(asyncio.get_running_loop())
+
+            async def interrupt(self) -> None:
+                return None
+
+            async def approve(self, approval_id: str) -> None:
+                self.loop_ids["approve"] = id(asyncio.get_running_loop())
+
+            async def deny(self, approval_id: str, reason: str) -> None:
+                self.loop_ids["deny"] = id(asyncio.get_running_loop())
+
+            async def get_status(self) -> AgentStatus:
+                return AgentStatus.IDLE
+
+        mgr = AgentProcessManager(data_dir=tmp_path)
+        fake_bridge = _FakeBridge()
+        monkeypatch.setattr(mgr, "_create_bridge", lambda agent_type, channel_id: fake_bridge)
+
+        try:
+            assert mgr.start_agent("codex", cwd=str(tmp_path), channel_id="room-1") is True
+            assert mgr.trigger_agent("codex", "human", "inspect this", "room-1") is True
+            assert mgr.stop_agent("codex", "room-1") is True
+        finally:
+            mgr.stop_all()
+
+        assert fake_bridge.started is True
+        assert fake_bridge.stopped is True
+        assert len(fake_bridge.sent_prompts) == 1
+        assert 'chat_join(channel="room-1", agent_type="codex")' in fake_bridge.sent_prompts[0][0]
+        assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["send_prompt"]
+        assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["stop"]

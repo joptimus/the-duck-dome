@@ -641,7 +641,55 @@ export default function ChannelShell() {
 
       if (event.type === "agent_status_change" && event.agent_id) {
         setAgents((prev) =>
-          prev.map((a) => (a.id === event.agent_id ? { ...a, status: event.status } : a)),
+          prev.map((a) =>
+            a.id === event.agent_id
+              ? {
+                  ...a,
+                  status: event.status,
+                  current_task: event.status === "working" ? a.current_task : null,
+                }
+              : a,
+          ),
+        );
+      }
+
+      if (event.type === "agent_tool_call" && event.agent_id) {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === event.agent_id
+              ? {
+                  ...a,
+                  current_task: event.tool_name || a.current_task,
+                }
+              : a,
+          ),
+        );
+      }
+
+      if (event.type === "agent_tool_result" && event.agent_id) {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === event.agent_id
+              ? {
+                  ...a,
+                  current_task: null,
+                  last_error: event.success ? null : (event.output || "Tool execution failed"),
+                }
+              : a,
+          ),
+        );
+      }
+
+      if (event.type === "agent_error" && event.agent_id) {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === event.agent_id
+              ? {
+                  ...a,
+                  last_error: event.error || "Agent error",
+                }
+              : a,
+          ),
         );
       }
 
