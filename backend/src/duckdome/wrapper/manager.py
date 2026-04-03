@@ -7,6 +7,7 @@ Each agent gets:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -16,8 +17,10 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Coroutine
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
@@ -25,16 +28,24 @@ from duckdome.bridges.base import AgentBridge, AgentConfig
 from duckdome.bridges.codex_bridge import CodexBridge
 from duckdome.bridges.claude_bridge import ClaudeBridge
 from duckdome.bridges.events import (
+    AgentMessageDeltaEvent,
+    AgentMessageEvent,
     AgentStatus,
     ApprovalRequestEvent,
+    ErrorEvent,
     StatusChangeEvent,
+    SubagentEvent,
+    ToolCallEvent,
+    ToolResultEvent,
 )
 from duckdome.wrapper.console_monitor import ConsoleMonitor
 from duckdome.wrapper.injector import inject
+from duckdome.mcp.auth import agent_auth_store
 from duckdome.wrapper.mcp_config import generate_agent_token, generate_gemini_settings, generate_mcp_config
 from duckdome.wrapper.mcp_proxy import McpProxy
 from duckdome.wrapper.providers import build_launch_args
 from duckdome.wrapper.queue import read_queue_entries
+from duckdome.wrapper.safe_tools import claude_allowed_mcp_tools
 
 logger = logging.getLogger(__name__)
 
@@ -368,6 +379,7 @@ class AgentProcessManager:
         app_port: int = 8000,
         tool_approval_service=None,
         ws_manager=None,
+        message_service=None,
     ) -> None:
         self._data_dir = data_dir
         self._data_dir.mkdir(parents=True, exist_ok=True)
@@ -376,11 +388,17 @@ class AgentProcessManager:
         self._app_port = app_port
         self._tool_approval_service = tool_approval_service
         self._ws_manager = ws_manager
+        self._message_service = message_service
         self._agents: dict[str, AgentProcess] = {}
         self._bridges: dict[str, AgentBridge] = {}
+        self._bridge_details: dict[str, dict[str, object | None]] = {}
         self._starting: set[str] = set()
         self._lock = threading.Lock()
         self._show_windows: bool = False
+        self._bridge_loop: asyncio.AbstractEventLoop | None = None
+        self._bridge_loop_thread: threading.Thread | None = None
+        self._bridge_loop_thread_id: int | None = None
+        self._bridge_loop_ready = threading.Event()
 
     @staticmethod
     def _agent_key(agent_type: str, channel_id: str = "") -> str:
@@ -426,24 +444,250 @@ class AgentProcessManager:
             )
             # If policy auto-resolved, respond immediately
             if result.status == "approved":
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(bridge.approve(event.approval_id))
-                except RuntimeError:
-                    # No running loop — fire and forget via new loop
-                    asyncio.run(bridge.approve(event.approval_id))
+                self._submit_bridge_coro(bridge.approve(event.approval_id))
             elif result.status == "denied":
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(bridge.deny(event.approval_id, "Denied by policy"))
-                except RuntimeError:
-                    asyncio.run(bridge.deny(event.approval_id, "Denied by policy"))
+                self._submit_bridge_coro(
+                    bridge.deny(event.approval_id, "Denied by policy")
+                )
+            elif result.approval is not None:
+                self._tool_approval_service.register_runtime_resolver(
+                    result.approval.id,
+                    lambda decision, reason: self._submit_bridge_coro(
+                        bridge.approve(event.approval_id)
+                        if decision == "approved"
+                        else bridge.deny(
+                            event.approval_id,
+                            reason or "Denied by user",
+                        )
+                    ),
+                )
             # If "pending", the UI will call approve/deny via the tool approval route
+
+        def _on_message(event: AgentMessageEvent) -> None:
+            if self._message_service is None:
+                return
+            try:
+                msg = self._message_service.send(
+                    text=event.text,
+                    channel=event.channel_id,
+                    sender=event.agent_type,
+                )
+                self._message_service.process_agent_response(
+                    agent_name=event.agent_type,
+                    channel=event.channel_id,
+                    response_id=msg.id,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to persist bridge message: agent=%s channel=%s",
+                    event.agent_type,
+                    event.channel_id,
+                )
+
+        def _on_message_delta(event: AgentMessageDeltaEvent) -> None:
+            if self._ws_manager:
+                self._ws_manager.broadcast_sync({
+                    "type": "agent_message_delta",
+                    "agent_id": event.agent_id,
+                    "agent_type": event.agent_type,
+                    "channel_id": event.channel_id,
+                    "delta": event.delta,
+                    "timestamp": event.timestamp,
+                })
+
+        def _on_tool_call(event: ToolCallEvent) -> None:
+            if self._ws_manager:
+                self._ws_manager.broadcast_sync({
+                    "type": "agent_tool_call",
+                    "agent_id": event.agent_id,
+                    "agent_type": event.agent_type,
+                    "channel_id": event.channel_id,
+                    "tool_name": event.tool_name,
+                    "tool_input": event.tool_input,
+                    "call_id": event.call_id,
+                    "timestamp": event.timestamp,
+                })
+
+        def _on_tool_result(event: ToolResultEvent) -> None:
+            if self._ws_manager:
+                self._ws_manager.broadcast_sync({
+                    "type": "agent_tool_result",
+                    "agent_id": event.agent_id,
+                    "agent_type": event.agent_type,
+                    "channel_id": event.channel_id,
+                    "tool_name": event.tool_name,
+                    "call_id": event.call_id,
+                    "success": event.success,
+                    "output": event.output,
+                    "duration_ms": event.duration_ms,
+                    "timestamp": event.timestamp,
+                })
+
+        def _on_subagent(event: SubagentEvent) -> None:
+            if self._ws_manager:
+                self._ws_manager.broadcast_sync({
+                    "type": "agent_subagent",
+                    "agent_id": event.agent_id,
+                    "agent_type": event.agent_type,
+                    "channel_id": event.channel_id,
+                    "subagent_id": event.subagent_id,
+                    "subagent_type": event.subagent_type,
+                    "started": event.started,
+                    "last_message": event.last_message,
+                    "timestamp": event.timestamp,
+                })
+
+        def _on_error(event: ErrorEvent) -> None:
+            if self._message_service is not None:
+                try:
+                    self._message_service.post_system_event(
+                        channel=event.channel_id,
+                        subtype="error",
+                        agent=event.agent_type,
+                        text=f"{event.agent_type} error: {event.error}",
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to persist bridge error: agent=%s channel=%s",
+                        event.agent_type,
+                        event.channel_id,
+                    )
+            if self._ws_manager:
+                self._ws_manager.broadcast_sync({
+                    "type": "agent_error",
+                    "agent_id": event.agent_id,
+                    "agent_type": event.agent_type,
+                    "channel_id": event.channel_id,
+                    "error": event.error,
+                    "details": event.details,
+                    "timestamp": event.timestamp,
+                })
+
+        def _handle_claude_pre_tool_use(
+            tool_name: str,
+            tool_input: dict[str, object],
+            channel_id: str,
+        ) -> dict[str, str]:
+            if self._tool_approval_service is None:
+                return {}
+            if tool_name in claude_allowed_mcp_tools():
+                return {"decision": "approve"}
+
+            result = self._tool_approval_service.request(
+                agent="claude",
+                tool=tool_name,
+                arguments=tool_input,
+                channel=channel_id,
+            )
+            if result.status == "approved":
+                return {"decision": "approve"}
+            if result.status == "denied":
+                return {"decision": "block", "reason": "Denied by policy"}
+            if result.approval is None:
+                return {}
+
+            wait_event = threading.Event()
+            decision: dict[str, str | None] = {"status": None, "reason": None}
+
+            def _resolver(resolved: str, reason: str | None) -> None:
+                decision["status"] = resolved
+                decision["reason"] = reason
+                wait_event.set()
+
+            self._tool_approval_service.register_runtime_resolver(
+                result.approval.id,
+                _resolver,
+            )
+            try:
+                if not wait_event.wait(timeout=600):
+                    return {"decision": "block", "reason": "Approval timed out"}
+                if decision["status"] == "approved":
+                    return {"decision": "approve"}
+                return {
+                    "decision": "block",
+                    "reason": decision["reason"] or "Denied by user",
+                }
+            finally:
+                self._tool_approval_service.clear_runtime_resolver(result.approval.id)
 
         bridge.on(bridge.STATUS_CHANGE, _on_status_change)
         bridge.on(bridge.APPROVAL_REQUEST, _on_approval_request)
+        bridge.on(bridge.MESSAGE, _on_message)
+        bridge.on(bridge.MESSAGE_DELTA, _on_message_delta)
+        bridge.on(bridge.TOOL_CALL, _on_tool_call)
+        bridge.on(bridge.TOOL_RESULT, _on_tool_result)
+        bridge.on(bridge.SUBAGENT, _on_subagent)
+        bridge.on(bridge.ERROR, _on_error)
+        if isinstance(bridge, ClaudeBridge):
+            bridge.set_pre_tool_use_handler(_handle_claude_pre_tool_use)
+
+    def _bridge_loop_worker(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._bridge_loop = loop
+        self._bridge_loop_thread_id = threading.get_ident()
+        self._bridge_loop_ready.set()
+        try:
+            loop.run_forever()
+        finally:
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(
+                    asyncio.gather(*pending, return_exceptions=True)
+                )
+            loop.close()
+            self._bridge_loop = None
+            self._bridge_loop_thread_id = None
+            self._bridge_loop_ready.clear()
+
+    def _ensure_bridge_loop(self) -> asyncio.AbstractEventLoop:
+        with self._lock:
+            if (
+                self._bridge_loop is not None
+                and self._bridge_loop_thread is not None
+                and self._bridge_loop_thread.is_alive()
+            ):
+                return self._bridge_loop
+
+            self._bridge_loop_ready.clear()
+            self._bridge_loop_thread = threading.Thread(
+                target=self._bridge_loop_worker,
+                daemon=True,
+                name="duckdome-bridge-loop",
+            )
+            self._bridge_loop_thread.start()
+
+        if not self._bridge_loop_ready.wait(timeout=5):
+            raise RuntimeError("Bridge event loop failed to start")
+        if self._bridge_loop is None:
+            raise RuntimeError("Bridge event loop unavailable")
+        return self._bridge_loop
+
+    def _submit_bridge_coro(self, coro: Coroutine[Any, Any, Any]) -> object:
+        loop = self._ensure_bridge_loop()
+        if self._bridge_loop_thread_id == threading.get_ident():
+            return loop.create_task(coro)
+        return asyncio.run_coroutine_threadsafe(coro, loop)
+
+    def _run_bridge_coro(self, coro: Coroutine[Any, Any, Any]) -> Any:
+        future = self._submit_bridge_coro(coro)
+        if hasattr(future, "result"):
+            return future.result()
+        raise RuntimeError("Cannot synchronously wait for bridge coroutine on bridge loop thread")
+
+    def _shutdown_bridge_loop(self) -> None:
+        with self._lock:
+            loop = self._bridge_loop
+            thread = self._bridge_loop_thread
+        if loop is None or thread is None or not thread.is_alive():
+            return
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(timeout=5)
+        with self._lock:
+            if self._bridge_loop_thread is thread and not thread.is_alive():
+                self._bridge_loop_thread = None
 
     async def _start_agent_bridge(
         self,
@@ -465,10 +709,20 @@ class AgentProcessManager:
                 "mcp_config_path": str(self._config_dir / f"{agent_type}-mcp.json"),
             },
         )
+        token = generate_agent_token()
+        bound_channel = channel_id or "general"
+        agent_auth_store.register(token, channel=bound_channel, agent_type=agent_type)
+        config.mcp_url = f"{self._mcp_url}?duckdome_token={token}"
+        config.extra["duckdome_token"] = token
 
         await bridge.start(agent_id=key, config=config)
         with self._lock:
             self._bridges[key] = bridge
+            self._bridge_details[key] = {
+                "pid": getattr(getattr(bridge, "_proc", None), "pid", None),
+                "started_at": time.time(),
+                "duckdome_token": token,
+            }
         logger.info("[%s] started via bridge", key)
         return True
 
@@ -499,20 +753,9 @@ class AgentProcessManager:
 
         try:
             if self._use_bridge(agent_type):
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    # Already in async context — schedule and wait
-                    future = asyncio.ensure_future(
-                        self._start_agent_bridge(agent_type, cwd, channel_id)
-                    )
-                    # Can't await from sync — the caller will see it start async
-                    return True
-                except RuntimeError:
-                    # No running loop — run synchronously
-                    return asyncio.run(
-                        self._start_agent_bridge(agent_type, cwd, channel_id)
-                    )
+                return self._run_bridge_coro(
+                    self._start_agent_bridge(agent_type, cwd, channel_id)
+                )
             return self._start_agent_inner(agent_type, cwd, auto_restart, channel_id=channel_id)
         except Exception:
             logger.exception("[%s] start_agent failed", key)
@@ -745,13 +988,11 @@ class AgentProcessManager:
         # Check bridge path first
         with self._lock:
             bridge = self._bridges.pop(key, None)
+            bridge_details = self._bridge_details.pop(key, None)
+        if bridge_details and bridge_details.get("duckdome_token"):
+            agent_auth_store.unregister(str(bridge_details["duckdome_token"]))
         if bridge is not None:
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(bridge.stop())
-            except RuntimeError:
-                asyncio.run(bridge.stop())
+            self._run_bridge_coro(bridge.stop())
             logger.info("[%s] stopped via bridge", key)
             return True
 
@@ -793,6 +1034,7 @@ class AgentProcessManager:
             # Keys are "agent_type--channel_id" or just "agent_type"
             parts = key.split("--", 1)
             self.stop_agent(parts[0], parts[1] if len(parts) > 1 else "")
+        self._shutdown_bridge_loop()
 
     def is_running(self, agent_type: str, channel_id: str = "") -> bool:
         key = self._agent_key(agent_type, channel_id)
@@ -811,6 +1053,12 @@ class AgentProcessManager:
         """Return pid and started_at for a running agent."""
         key = self._agent_key(agent_type, channel_id)
         with self._lock:
+            bridge_details = self._bridge_details.get(key)
+            if key in self._bridges and bridge_details is not None:
+                return {
+                    "pid": bridge_details.get("pid"),
+                    "started_at": bridge_details.get("started_at"),
+                }
             ap = self._agents.get(key)
             if ap is None or not self._is_alive(key):
                 return None
@@ -856,13 +1104,12 @@ class AgentProcessManager:
             prompt = _build_trigger_prompt(
                 agent_type=agent_type, channel=channel, sender=sender, text=text,
             )
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(bridge.send_prompt(prompt, channel, sender))
-            except RuntimeError:
-                asyncio.run(bridge.send_prompt(prompt, channel, sender))
+            self._run_bridge_coro(bridge.send_prompt(prompt, channel, sender))
             return True
+
+        if self._use_bridge(agent_type):
+            logger.error("[%s] bridge trigger requested but no bridge is running", key)
+            return False
 
         # Legacy path: write to queue file
         from duckdome.wrapper.queue import write_queue_entry

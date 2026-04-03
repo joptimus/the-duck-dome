@@ -18,7 +18,7 @@ import sys
 import threading
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from duckdome.bridges.base import AgentBridge, AgentConfig
 from duckdome.bridges.claude_hook_receiver import (
@@ -41,6 +41,7 @@ from duckdome.wrapper.injector import inject
 logger = logging.getLogger(__name__)
 
 _JsonDict = dict[str, Any]
+PreToolUseHandler = Callable[[str, dict[str, object], str], _JsonDict]
 
 
 class ClaudeBridge(AgentBridge):
@@ -56,6 +57,7 @@ class ClaudeBridge(AgentBridge):
         self._settings_dir: Path | None = None
         # approval_id → asyncio.Event + decision dict
         self._pending_approvals: dict[str, tuple[threading.Event, _JsonDict]] = {}
+        self._pre_tool_use_handler: PreToolUseHandler | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -214,6 +216,12 @@ class ClaudeBridge(AgentBridge):
             self._status = AgentStatus.OFFLINE
         return self._status
 
+    def set_pre_tool_use_handler(
+        self,
+        handler: PreToolUseHandler | None,
+    ) -> None:
+        self._pre_tool_use_handler = handler
+
     # ------------------------------------------------------------------
     # Hook handler (called synchronously from FastAPI endpoint)
     # ------------------------------------------------------------------
@@ -285,19 +293,20 @@ class ClaudeBridge(AgentBridge):
         tool_name = payload.get("tool_name", "")
         tool_input = payload.get("tool_input", {})
         call_id = payload.get("tool_use_id", "")
+        normalized_input = tool_input if isinstance(tool_input, dict) else {}
 
         self._emit(self.TOOL_CALL, ToolCallEvent(
             agent_id=self._agent_id,
             agent_type="claude",
             channel_id=channel_id,
             tool_name=tool_name,
-            tool_input=tool_input if isinstance(tool_input, dict) else {},
+            tool_input=normalized_input,
             call_id=call_id,
         ))
 
-        # For now, auto-approve all tool calls.
-        # When wired to the approval service, this will check policies
-        # and potentially block here waiting for user input.
+        if self._pre_tool_use_handler is not None:
+            return self._pre_tool_use_handler(tool_name, normalized_input, channel_id)
+
         return {}
 
     def _handle_post_tool_use(self, payload: _JsonDict, channel_id: str) -> None:
