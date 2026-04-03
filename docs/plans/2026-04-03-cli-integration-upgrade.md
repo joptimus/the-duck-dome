@@ -676,3 +676,44 @@ The MCP server itself doesn't change — it's already agent-agnostic. Only the o
 | **Complexity** | Medium (HTTP receiver + settings injection) | Low (WebSocket client) |
 
 Codex's app-server is the more complete integration — it gives DuckDome full programmatic control over the agent without any of the current workarounds (queue files, keystroke injection, console scraping, MCP proxy). Claude Code's HTTP hooks are a good improvement over the status quo but still require keystroke injection for prompt submission.
+
+---
+
+## Implementation Status (2026-04-03)
+
+### Completed (PRs #50, #51 merged)
+
+| Phase | Status | PR |
+|---|---|---|
+| U1: AgentBridge interface + event model | Done | #50 |
+| U2: CodexBridge (stdio JSON-RPC) | Done | #50 |
+| U3: ClaudeBridge (HTTP hooks + injection) | Done | #50 |
+| U4: Manager integration | Done | #50 |
+| Wiring: both bridges enabled, 33 tests | Done | #51 |
+
+### Tested (live run 2026-04-03)
+
+- **Codex**: Successfully initialized app-server, started thread, called MCP tools (chat_join, chat_read, identity). Bridge path works end-to-end.
+- **Claude**: Bridge starts process, writes hook settings, but keystroke injection fails immediately (console not ready). Hook settings file is created correctly.
+
+### Known Bugs (must fix before production use)
+
+**BUG-1: async/sync event loop mismatch in manager**
+The manager methods (`start_agent`, `stop_agent`, `trigger_agent`, `_connect_bridge_events`) use `asyncio.get_running_loop()` / `asyncio.run()` to call async bridge methods. This fails when called from FastAPI sync endpoints running in uvicorn's threadpool — `get_running_loop()` raises because there's no loop in the worker thread, and `asyncio.run()` also fails because uvicorn's main thread has a loop running.
+
+**Fix needed:** The manager needs a dedicated asyncio event loop running in a background thread. All bridge async calls should be submitted to this loop via `asyncio.run_coroutine_threadsafe()`. This matches the pattern used by the existing `broadcast_sync()` in `ws/manager.py`.
+
+**BUG-2: Claude keystroke injection fails on startup**
+The bridge calls `send_prompt()` immediately after `start()`, but the Claude process hasn't finished initializing its console yet. The legacy path has a ready_event + queue watcher that waits for the process to be ready before injecting.
+
+**Fix needed:** Add a startup delay or readiness check before the first `send_prompt()`. Could poll `proc.poll()` + a timer, or wait for the first `SessionStart` hook event before marking the bridge as ready.
+
+### Remaining Work
+
+| Item | Priority | Effort |
+|---|---|---|
+| Fix BUG-1: dedicated event loop for bridge async calls | Critical | Small — add a background loop thread to manager |
+| Fix BUG-2: Claude startup readiness before injection | Critical | Small — add ready event, wait for SessionStart hook |
+| U5: Inter-agent routing | Medium | Large — task handoff, context injection |
+| U6: Legacy removal | Low | Medium — remove console monitor, MCP proxy for bridged agents |
+| Hook settings env var | Medium | Small — verify `CLAUDE_LOCAL_SETTINGS_DIR` is the right env var for Claude Code to find the hook settings |
