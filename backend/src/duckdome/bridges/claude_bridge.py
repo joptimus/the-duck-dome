@@ -56,6 +56,8 @@ class ClaudeBridge(AgentBridge):
         self._settings_dir: Path | None = None
         # approval_id → asyncio.Event + decision dict
         self._pending_approvals: dict[str, tuple[threading.Event, _JsonDict]] = {}
+        # Set when the CLI is ready to accept input (SessionStart hook fires)
+        self._ready = threading.Event()
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -158,6 +160,11 @@ class ClaudeBridge(AgentBridge):
     async def send_prompt(self, text: str, channel_id: str, sender: str) -> None:
         if not self._proc or self._proc.poll() is not None:
             raise RuntimeError("Claude process not running")
+
+        # Wait for the CLI to be ready (SessionStart hook fires)
+        ready = await asyncio.to_thread(self._ready.wait, 30)
+        if not ready:
+            logger.warning("Claude agent %s not ready after 30s, injecting anyway", self._agent_id)
 
         self._status = AgentStatus.WORKING
         self._emit(self.STATUS_CHANGE, StatusChangeEvent(
@@ -270,6 +277,10 @@ class ClaudeBridge(AgentBridge):
                         channel_id=channel_id,
                         text=last_msg,
                     ))
+            case "SessionStart":
+                if not self._ready.is_set():
+                    logger.info("Claude agent %s ready (SessionStart received)", self._agent_id)
+                    self._ready.set()
             case "Notification":
                 logger.info(
                     "Claude notification [%s]: %s",

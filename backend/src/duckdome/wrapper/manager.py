@@ -7,6 +7,7 @@ Each agent gets:
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -382,6 +383,25 @@ class AgentProcessManager:
         self._lock = threading.Lock()
         self._show_windows: bool = False
 
+        # Dedicated event loop for bridge async calls.  The manager is
+        # called from sync FastAPI endpoints running in uvicorn's
+        # threadpool, so we cannot use asyncio.run() (uvicorn's main
+        # thread already owns a loop) or get_running_loop() (no loop in
+        # the worker thread).  A dedicated loop in a daemon thread
+        # solves both problems.
+        self._bridge_loop = asyncio.new_event_loop()
+        self._bridge_loop_thread = threading.Thread(
+            target=self._bridge_loop.run_forever,
+            daemon=True,
+            name="bridge-loop",
+        )
+        self._bridge_loop_thread.start()
+
+    def _run_bridge_coro(self, coro):
+        """Submit a coroutine to the bridge loop and block until done."""
+        future = asyncio.run_coroutine_threadsafe(coro, self._bridge_loop)
+        return future.result(timeout=60)
+
     @staticmethod
     def _agent_key(agent_type: str, channel_id: str = "") -> str:
         """Build the dict key for an agent process.
@@ -426,20 +446,14 @@ class AgentProcessManager:
             )
             # If policy auto-resolved, respond immediately
             if result.status == "approved":
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(bridge.approve(event.approval_id))
-                except RuntimeError:
-                    # No running loop — fire and forget via new loop
-                    asyncio.run(bridge.approve(event.approval_id))
+                asyncio.run_coroutine_threadsafe(
+                    bridge.approve(event.approval_id), self._bridge_loop,
+                )
             elif result.status == "denied":
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    loop.create_task(bridge.deny(event.approval_id, "Denied by policy"))
-                except RuntimeError:
-                    asyncio.run(bridge.deny(event.approval_id, "Denied by policy"))
+                asyncio.run_coroutine_threadsafe(
+                    bridge.deny(event.approval_id, "Denied by policy"),
+                    self._bridge_loop,
+                )
             # If "pending", the UI will call approve/deny via the tool approval route
 
         bridge.on(bridge.STATUS_CHANGE, _on_status_change)
@@ -499,20 +513,9 @@ class AgentProcessManager:
 
         try:
             if self._use_bridge(agent_type):
-                import asyncio
-                try:
-                    loop = asyncio.get_running_loop()
-                    # Already in async context — schedule and wait
-                    future = asyncio.ensure_future(
-                        self._start_agent_bridge(agent_type, cwd, channel_id)
-                    )
-                    # Can't await from sync — the caller will see it start async
-                    return True
-                except RuntimeError:
-                    # No running loop — run synchronously
-                    return asyncio.run(
-                        self._start_agent_bridge(agent_type, cwd, channel_id)
-                    )
+                return self._run_bridge_coro(
+                    self._start_agent_bridge(agent_type, cwd, channel_id)
+                )
             return self._start_agent_inner(agent_type, cwd, auto_restart, channel_id=channel_id)
         except Exception:
             logger.exception("[%s] start_agent failed", key)
@@ -746,12 +749,7 @@ class AgentProcessManager:
         with self._lock:
             bridge = self._bridges.pop(key, None)
         if bridge is not None:
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(bridge.stop())
-            except RuntimeError:
-                asyncio.run(bridge.stop())
+            self._run_bridge_coro(bridge.stop())
             logger.info("[%s] stopped via bridge", key)
             return True
 
@@ -856,12 +854,7 @@ class AgentProcessManager:
             prompt = _build_trigger_prompt(
                 agent_type=agent_type, channel=channel, sender=sender, text=text,
             )
-            import asyncio
-            try:
-                loop = asyncio.get_running_loop()
-                loop.create_task(bridge.send_prompt(prompt, channel, sender))
-            except RuntimeError:
-                asyncio.run(bridge.send_prompt(prompt, channel, sender))
+            self._run_bridge_coro(bridge.send_prompt(prompt, channel, sender))
             return True
 
         # Legacy path: write to queue file
