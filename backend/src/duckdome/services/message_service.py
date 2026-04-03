@@ -171,14 +171,14 @@ class MessageService:
                     f"Human message required to resume."
                 )
                 guard_msg = Message(
-                text=guard_text,
-                channel=channel,
-                sender="system",
+                    text=guard_text,
+                    channel=channel,
+                    sender="system",
                     type=MessageType.SYSTEM,
-                subtype="error",
-            )
-            self._store.add(guard_msg)
-            self._broadcast({"type": NEW_MESSAGE, "message": guard_msg.model_dump()})
+                    subtype="error",
+                )
+                self._store.add(guard_msg)
+                self._broadcast({"type": NEW_MESSAGE, "message": guard_msg.model_dump()})
 
             # Store the agent message but skip delivery/trigger creation
             msg = Message(
