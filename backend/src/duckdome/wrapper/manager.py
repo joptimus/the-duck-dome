@@ -400,25 +400,6 @@ class AgentProcessManager:
         self._bridge_loop_thread_id: int | None = None
         self._bridge_loop_ready = threading.Event()
 
-        # Dedicated event loop for bridge async calls.  The manager is
-        # called from sync FastAPI endpoints running in uvicorn's
-        # threadpool, so we cannot use asyncio.run() (uvicorn's main
-        # thread already owns a loop) or get_running_loop() (no loop in
-        # the worker thread).  A dedicated loop in a daemon thread
-        # solves both problems.
-        self._bridge_loop = asyncio.new_event_loop()
-        self._bridge_loop_thread = threading.Thread(
-            target=self._bridge_loop.run_forever,
-            daemon=True,
-            name="bridge-loop",
-        )
-        self._bridge_loop_thread.start()
-
-    def _run_bridge_coro(self, coro):
-        """Submit a coroutine to the bridge loop and block until done."""
-        future = asyncio.run_coroutine_threadsafe(coro, self._bridge_loop)
-        return future.result(timeout=60)
-
     @staticmethod
     def _agent_key(agent_type: str, channel_id: str = "") -> str:
         """Build the dict key for an agent process.
@@ -690,10 +671,14 @@ class AgentProcessManager:
             return loop.create_task(coro)
         return asyncio.run_coroutine_threadsafe(coro, loop)
 
-    def _run_bridge_coro(self, coro: Coroutine[Any, Any, Any]) -> Any:
+    def _run_bridge_coro(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        timeout: float | None = 60,
+    ) -> Any:
         future = self._submit_bridge_coro(coro)
         if hasattr(future, "result"):
-            return future.result()
+            return future.result(timeout=timeout)
         raise RuntimeError("Cannot synchronously wait for bridge coroutine on bridge loop thread")
 
     def _shutdown_bridge_loop(self) -> None:
@@ -1123,7 +1108,10 @@ class AgentProcessManager:
             prompt = _build_trigger_prompt(
                 agent_type=agent_type, channel=channel, sender=sender, text=text,
             )
-            self._run_bridge_coro(bridge.send_prompt(prompt, channel, sender))
+            self._run_bridge_coro(
+                bridge.send_prompt(prompt, channel, sender),
+                timeout=120,  # send_prompt waits up to 30s for ready + keystroke injection
+            )
             return True
 
         if self._use_bridge(agent_type):

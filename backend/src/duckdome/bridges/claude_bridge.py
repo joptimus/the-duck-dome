@@ -66,6 +66,7 @@ class ClaudeBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def start(self, agent_id: str, config: AgentConfig) -> None:
+        self._ready.clear()
         self._agent_id = agent_id
         self._config = config
 
@@ -128,6 +129,7 @@ class ClaudeBridge(AgentBridge):
         ))
 
     async def stop(self) -> None:
+        self._ready.clear()
         unregister_hook_handler(self._agent_id)
 
         # Fail pending approvals
@@ -166,7 +168,14 @@ class ClaudeBridge(AgentBridge):
         # Wait for the CLI to be ready (SessionStart hook fires)
         ready = await asyncio.to_thread(self._ready.wait, 30)
         if not ready:
-            logger.warning("Claude agent %s not ready after 30s, injecting anyway", self._agent_id)
+            raise TimeoutError(
+                f"Claude agent {self._agent_id} did not become ready within 30s"
+            )
+
+        # Re-check process after the wait — stop() may have fired
+        proc = self._proc
+        if not proc or proc.poll() is not None:
+            raise RuntimeError("Claude process stopped before prompt injection")
 
         self._status = AgentStatus.WORKING
         self._emit(self.STATUS_CHANGE, StatusChangeEvent(
@@ -176,7 +185,7 @@ class ClaudeBridge(AgentBridge):
             status=AgentStatus.WORKING,
         ))
 
-        pid = self._proc.pid
+        pid = proc.pid
         tmux_session = self._config.extra.get("tmux_session") if self._config else None
 
         success = await asyncio.to_thread(
