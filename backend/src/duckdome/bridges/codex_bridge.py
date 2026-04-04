@@ -360,7 +360,10 @@ class CodexBridge(AgentBridge):
         ):
             approval_id = params.get("approvalId") or params.get("itemId") or str(uuid.uuid4())
             command = params.get("command", "")
-            tool_name = "local_shell" if "commandExecution" in method else "apply_patch"
+            if method == "item/commandExecution/requestApproval":
+                tool_name = "local_shell"
+            else:
+                tool_name = "apply_patch"
 
             fut: asyncio.Future[_JsonDict] = asyncio.get_running_loop().create_future()
             self._pending_approvals[approval_id] = fut
