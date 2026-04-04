@@ -71,7 +71,6 @@ export function SettingsPanel({ open, onClose }) {
   const [showAgentWindows, setShowAgentWindows] = useState(false);
   const toastTimeoutRef = useRef(null);
 
-  // Reload saved settings when panel opens
   useEffect(() => {
     if (open) {
       setSettings(loadUiSettings());
@@ -99,7 +98,6 @@ export function SettingsPanel({ open, onClose }) {
   const handleApply = () => {
     saveUiSettings(settings);
     applyUiSettings(settings);
-    // Request browser notification permission when enabling desktop notifications
     if (settings.desktopNotifications && typeof Notification !== "undefined" && Notification.permission === "default") {
       Notification.requestPermission();
     }
@@ -156,11 +154,7 @@ export function SettingsPanel({ open, onClose }) {
       </Section>
 
       <Section title="Agents">
-        <Toggle
-          label="Show agent windows"
-          on={showAgentWindows}
-          onChange={handleShowWindowsToggle}
-        />
+        <Toggle label="Show agent windows" on={showAgentWindows} onChange={handleShowWindowsToggle} />
       </Section>
 
       <div className={styles.actions}>
