@@ -1,55 +1,10 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useId, useRef } from "react";
 import { BoltIcon } from "../icons";
 import { SectionLabel } from "../primitives";
 import { RightPanel } from "./RightPanel";
+import { applyUiSettings, loadUiSettings, saveUiSettings } from "../../features/settings/uiPreferences";
+import { fetchSettings, patchSettings } from "../../features/settings/settingsApi";
 import styles from "./SettingsPanel.module.css";
-
-const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
-
-async function fetchSettings() {
-  try {
-    const r = await fetch(`${API_BASE}/api/settings`);
-    if (r.ok) return r.json();
-  } catch { /* ignore */ }
-  return { show_agent_windows: false };
-}
-
-async function patchSettings(patch) {
-  const r = await fetch(`${API_BASE}/api/settings`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(patch),
-  });
-  if (!r.ok) throw new Error(`PATCH /api/settings failed: ${r.status}`);
-  return r.json();
-}
-
-const SETTINGS_KEY = "duckdome:settings";
-
-const DEFAULT_SETTINGS = {
-  name: "James",
-  font: "Sans",
-  contrast: "Normal",
-  loopGuard: "4",
-  ruleRefresh: "Every 10 triggers",
-  desktopNotifications: false,
-  soundsEnabled: true,
-  defaultSound: "Soft Chime",
-};
-
-function loadSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    /* ignore corrupt data */
-  }
-  return { ...DEFAULT_SETTINGS };
-}
-
-function saveSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
-}
 
 function FieldInput({ label, value, onChange }) {
   return (
@@ -74,15 +29,29 @@ function FieldSelect({ label, value, options, onChange }) {
 }
 
 function Toggle({ label, on, onChange }) {
+  const labelId = useId();
+
+  const handleKeyDown = (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onChange(!on);
+    }
+  };
+
   return (
     <div className={styles.toggleRow}>
-      <span className={styles.toggleLabel}>{label}</span>
-      <div
+      <span className={styles.toggleLabel} id={labelId}>{label}</span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        aria-labelledby={labelId}
         className={`${styles.toggleTrack} ${on ? styles.toggleOn : ""}`.trim()}
         onClick={() => onChange(!on)}
+        onKeyDown={handleKeyDown}
       >
         <div className={`${styles.toggleCircle} ${on ? styles.toggleCircleOn : ""}`.trim()} />
-      </div>
+      </button>
     </div>
   );
 }
@@ -97,17 +66,23 @@ function Section({ title, children }) {
 }
 
 export function SettingsPanel({ open, onClose }) {
-  const [settings, setSettings] = useState(loadSettings);
+  const [settings, setSettings] = useState(loadUiSettings);
   const [toast, setToast] = useState(false);
   const [showAgentWindows, setShowAgentWindows] = useState(false);
+  const toastTimeoutRef = useRef(null);
 
-  // Reload saved settings when panel opens
   useEffect(() => {
     if (open) {
-      setSettings(loadSettings());
+      setSettings(loadUiSettings());
       fetchSettings().then((s) => setShowAgentWindows(Boolean(s.show_agent_windows)));
     }
   }, [open]);
+
+  useEffect(() => () => {
+    if (toastTimeoutRef.current !== null) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+  }, []);
 
   const update = useCallback((key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
@@ -121,17 +96,23 @@ export function SettingsPanel({ open, onClose }) {
   };
 
   const handleApply = () => {
-    saveSettings(settings);
-    // Request browser notification permission when enabling desktop notifications
+    saveUiSettings(settings);
+    applyUiSettings(settings);
     if (settings.desktopNotifications && typeof Notification !== "undefined" && Notification.permission === "default") {
       Notification.requestPermission();
     }
+    if (toastTimeoutRef.current !== null) {
+      clearTimeout(toastTimeoutRef.current);
+    }
     setToast(true);
-    setTimeout(() => setToast(false), 2000);
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(false);
+      toastTimeoutRef.current = null;
+    }, 2000);
   };
 
   const handleCancel = () => {
-    setSettings(loadSettings());
+    setSettings(loadUiSettings());
     onClose();
   };
 
@@ -173,11 +154,7 @@ export function SettingsPanel({ open, onClose }) {
       </Section>
 
       <Section title="Agents">
-        <Toggle
-          label="Show agent windows"
-          on={showAgentWindows}
-          onChange={handleShowWindowsToggle}
-        />
+        <Toggle label="Show agent windows" on={showAgentWindows} onChange={handleShowWindowsToggle} />
       </Section>
 
       <div className={styles.actions}>
