@@ -21,6 +21,7 @@ class WrapperService:
         tool_approval_service=None,
         ws_manager=None,
         message_service=None,
+        trigger_service=None,
     ) -> None:
         self._manager = AgentProcessManager(
             data_dir=data_dir,
@@ -28,6 +29,7 @@ class WrapperService:
             tool_approval_service=tool_approval_service,
             ws_manager=ws_manager,
             message_service=message_service,
+            trigger_service=trigger_service,
         )
 
     def start_agent(self, agent_type: str, cwd: str | None = None, channel_id: str = "") -> bool:

@@ -505,7 +505,12 @@ class TestManagerBridgeRouting:
 
         assert fake_bridge.started is True
         assert fake_bridge.stopped is True
-        assert len(fake_bridge.sent_prompts) == 1
-        assert 'chat_join(channel="room-1", agent_type="codex")' in fake_bridge.sent_prompts[0][0]
+        # 2 prompts: startup prompt (sent at bridge start) + trigger prompt
+        assert len(fake_bridge.sent_prompts) == 2
+        startup_text, startup_channel, startup_sender = fake_bridge.sent_prompts[0]
+        assert "#room-1" in startup_text
+        assert startup_sender == "system"
+        trigger_text = fake_bridge.sent_prompts[1][0]
+        assert "you were mentioned" in trigger_text
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["send_prompt"]
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["stop"]

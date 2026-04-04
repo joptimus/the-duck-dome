@@ -184,43 +184,27 @@ HEARTBEAT_INTERVAL = 5.0  # seconds
 INJECT_DELAY = 0.01  # seconds between keystrokes
 
 
-def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: str) -> str:
-    """Build the injected task prompt for an agent queue entry.
+def _build_startup_prompt(*, agent_type: str, channel: str) -> str:
+    """Build the one-time startup prompt sent when a bridge agent becomes ready.
 
-    This feature replaces the legacy wrapper prompt in
-    ``agentchattr/apps/server/src/wrapper.py``.
-
-    Differences from legacy behavior:
-    - DuckDome avoids the literal ``mcp read`` phrasing for Claude because newer
-      Claude Code interprets it as a generic MCP resource read, not the legacy
-      chat action.
-    - Includes the triggering sender/text explicitly so the agent does not have to
-      infer the task only from recent chat history.
-    - Tells the agent to do the requested work before posting a reply.
+    Establishes the agent's identity and channel context so trigger prompts
+    can be kept minimal.
     """
-    normalized_channel = str(channel).strip() or "general"
-    normalized_sender = str(sender).strip() or "human"
-    normalized_text = str(text).strip()
-
-    if agent_type == "claude":
-        prompt = (
-            f'Use DuckDome MCP: chat_join(channel="{normalized_channel}", agent_type="claude"), '
-            f'then chat_read(channel="{normalized_channel}") — '
-            f'you were mentioned, take appropriate action. '
-            f'Always pass sender="claude" in chat_send and chat_read calls.'
-        )
-        if normalized_text:
-            prompt += f" {normalized_sender} asks: {normalized_text}"
-        return prompt
-
-    prompt = (
-        f'chat_join(channel="{normalized_channel}", agent_type="{agent_type}"), '
-        f'then chat_read(channel="{normalized_channel}") — '
-        f'you were mentioned, take appropriate action.'
+    return (
+        f'You are the {agent_type} agent for the #{channel} channel in DuckDome. '
+        f'Use chat_read to read messages and chat_send to reply. '
+        f'Always pass sender="{agent_type}" in your tool calls. '
+        f'You can @mention other agents to involve them in tasks.'
     )
-    if normalized_text:
-        prompt += f" {normalized_sender} asks: {normalized_text}"
-    return prompt
+
+
+def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: str) -> str:
+    """Build the injected task prompt when an agent is mentioned.
+
+    The agent already knows its channel and identity from the startup prompt,
+    so this just needs to wake it up.
+    """
+    return "you were mentioned, take appropriate action"
 
 
 def _open_agent_terminal(tmux_session: str) -> None:
@@ -380,6 +364,7 @@ class AgentProcessManager:
         tool_approval_service=None,
         ws_manager=None,
         message_service=None,
+        trigger_service=None,
     ) -> None:
         self._data_dir = data_dir
         self._data_dir.mkdir(parents=True, exist_ok=True)
@@ -389,6 +374,7 @@ class AgentProcessManager:
         self._tool_approval_service = tool_approval_service
         self._ws_manager = ws_manager
         self._message_service = message_service
+        self._trigger_service = trigger_service
         self._agents: dict[str, AgentProcess] = {}
         self._bridges: dict[str, AgentBridge] = {}
         self._bridge_details: dict[str, dict[str, object | None]] = {}
@@ -727,6 +713,18 @@ class AgentProcessManager:
                 "started_at": time.time(),
                 "duckdome_token": token,
             }
+        # Register agent in channel — posts "joined the channel" system message
+        if self._trigger_service is not None:
+            try:
+                self._trigger_service.register_agent(bound_channel, agent_type)
+            except Exception:
+                logger.exception("[%s] failed to register agent in channel %s", key, bound_channel)
+
+        # Send startup prompt — fires once the bridge is ready (ClaudeBridge waits
+        # for SessionStart; CodexBridge is ready immediately after start())
+        startup = _build_startup_prompt(agent_type=agent_type, channel=bound_channel)
+        self._submit_bridge_coro(bridge.send_prompt(startup, bound_channel, "system"))
+
         logger.info("[%s] started via bridge", key)
         return True
 

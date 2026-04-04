@@ -122,6 +122,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         tool_approval_service=tool_approval_service,
         ws_manager=ws_manager,
         message_service=message_service,
+        trigger_service=trigger_service,
     )
 
     # Apply persisted settings to services before routes are ready
