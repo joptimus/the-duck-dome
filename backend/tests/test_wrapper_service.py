@@ -17,7 +17,7 @@ def test_trigger_writes_queue_entry():
 
         result = svc.trigger(agent_type="claude", sender="user", text="hello", channel="general")
         assert result is True
-        svc._manager.trigger_agent.assert_called_once_with("claude", "user", "hello", "general")
+        svc._manager.trigger_agent.assert_called_once_with("claude", "user", "hello", "general", cwd=None)
 
 
 def test_trigger_returns_false_when_agent_not_running():

@@ -99,7 +99,7 @@ def test_build_prompt_general(stores, general_channel):
     assert "general channel" in prompt
     assert "no repo binding" in prompt
     assert "@claude help" in prompt
-    assert "Make progress" in prompt
+    assert "Respond directly" in prompt
 
 
 def test_build_prompt_repo(stores, repo_channel):
@@ -114,7 +114,7 @@ def test_build_prompt_repo(stores, repo_channel):
     prompt = build_prompt(ctx)
     assert "repo channel" in prompt
     assert "Working directory" in prompt
-    assert "do not modify files" in prompt
+    assert "Respond directly" in prompt
 
 
 def test_repo_preflight_valid(tmp_path):

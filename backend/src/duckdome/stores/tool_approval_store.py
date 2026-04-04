@@ -42,7 +42,7 @@ class ToolApprovalStore:
             if self._policy_file.exists():
                 try:
                     data = json.loads(self._policy_file.read_text("utf-8"))
-                except Exception:
+                except (FileNotFoundError, json.JSONDecodeError):
                     data = {}
                 if isinstance(data, dict):
                     for agent, tools in data.items():

@@ -400,9 +400,12 @@ class CodexBridge(AgentBridge):
         ):
             approval_id = params.get("approvalId") or params.get("itemId") or str(uuid.uuid4())
             command = params.get("command", "")
-            if "commandExecution" in method:
+            if method == "item/commandExecution/requestApproval":
                 tool_name = "local_shell"
-            elif "fileChange" in method or "applyPatch" in method:
+            elif method in (
+                "item/applyPatch/requestApproval",
+                "item/fileChange/requestApproval",
+            ):
                 tool_name = "apply_patch"
             else:
                 tool_name = "permissions"

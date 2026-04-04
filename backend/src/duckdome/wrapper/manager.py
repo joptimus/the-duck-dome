@@ -671,10 +671,14 @@ class AgentProcessManager:
             return loop.create_task(coro)
         return asyncio.run_coroutine_threadsafe(coro, loop)
 
-    def _run_bridge_coro(self, coro: Coroutine[Any, Any, Any]) -> Any:
+    def _run_bridge_coro(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        timeout: float | None = 60,
+    ) -> Any:
         future = self._submit_bridge_coro(coro)
         if hasattr(future, "result"):
-            return future.result()
+            return future.result(timeout=timeout)
         raise RuntimeError("Cannot synchronously wait for bridge coroutine on bridge loop thread")
 
     def _shutdown_bridge_loop(self) -> None:
@@ -1104,7 +1108,10 @@ class AgentProcessManager:
             prompt = _build_trigger_prompt(
                 agent_type=agent_type, channel=channel, sender=sender, text=text,
             )
-            self._run_bridge_coro(bridge.send_prompt(prompt, channel, sender))
+            self._run_bridge_coro(
+                bridge.send_prompt(prompt, channel, sender),
+                timeout=120,  # send_prompt waits up to 30s for ready + keystroke injection
+            )
             return True
 
         if self._use_bridge(agent_type):

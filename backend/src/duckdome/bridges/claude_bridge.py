@@ -57,6 +57,8 @@ class ClaudeBridge(AgentBridge):
         self._settings_dir: Path | None = None
         # approval_id → asyncio.Event + decision dict
         self._pending_approvals: dict[str, tuple[threading.Event, _JsonDict]] = {}
+        # Set when the CLI is ready to accept input (SessionStart hook fires)
+        self._ready = threading.Event()
         self._pre_tool_use_handler: PreToolUseHandler | None = None
 
     # ------------------------------------------------------------------
@@ -64,6 +66,7 @@ class ClaudeBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def start(self, agent_id: str, config: AgentConfig) -> None:
+        self._ready.clear()
         self._agent_id = agent_id
         self._config = config
 
@@ -126,6 +129,7 @@ class ClaudeBridge(AgentBridge):
         ))
 
     async def stop(self) -> None:
+        self._ready.clear()
         unregister_hook_handler(self._agent_id)
 
         # Fail pending approvals
@@ -161,6 +165,18 @@ class ClaudeBridge(AgentBridge):
         if not self._proc or self._proc.poll() is not None:
             raise RuntimeError("Claude process not running")
 
+        # Wait for the CLI to be ready (SessionStart hook fires)
+        ready = await asyncio.to_thread(self._ready.wait, 30)
+        if not ready:
+            raise TimeoutError(
+                f"Claude agent {self._agent_id} did not become ready within 30s"
+            )
+
+        # Re-check process after the wait — stop() may have fired
+        proc = self._proc
+        if not proc or proc.poll() is not None:
+            raise RuntimeError("Claude process stopped before prompt injection")
+
         self._status = AgentStatus.WORKING
         self._emit(self.STATUS_CHANGE, StatusChangeEvent(
             agent_id=self._agent_id,
@@ -169,7 +185,7 @@ class ClaudeBridge(AgentBridge):
             status=AgentStatus.WORKING,
         ))
 
-        pid = self._proc.pid
+        pid = proc.pid
         tmux_session = self._config.extra.get("tmux_session") if self._config else None
 
         success = await asyncio.to_thread(
@@ -278,6 +294,10 @@ class ClaudeBridge(AgentBridge):
                         channel_id=channel_id,
                         text=last_msg,
                     ))
+            case "SessionStart":
+                if not self._ready.is_set():
+                    logger.info("Claude agent %s ready (SessionStart received)", self._agent_id)
+                    self._ready.set()
             case "Notification":
                 logger.info(
                     "Claude notification [%s]: %s",
