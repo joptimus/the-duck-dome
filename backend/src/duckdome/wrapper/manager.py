@@ -1106,10 +1106,14 @@ class AgentProcessManager:
             prompt = _build_trigger_prompt(
                 agent_type=agent_type, channel=channel, sender=sender, text=text,
             )
-            self._run_bridge_coro(
-                bridge.send_prompt(prompt, channel, sender),
-                timeout=120,  # send_prompt waits up to 30s for ready + keystroke injection
-            )
+            try:
+                self._run_bridge_coro(
+                    bridge.send_prompt(prompt, channel, sender),
+                    timeout=120,  # send_prompt waits up to 30s for ready + keystroke injection
+                )
+            except (TimeoutError, RuntimeError) as exc:
+                logger.error("[%s] send_prompt failed: %s", key, exc)
+                return False
             return True
 
         if self._use_bridge(agent_type):

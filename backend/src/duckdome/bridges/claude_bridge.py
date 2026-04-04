@@ -54,7 +54,7 @@ class ClaudeBridge(AgentBridge):
         self._config: AgentConfig | None = None
         self._proc: subprocess.Popen[str] | None = None
         self._status = AgentStatus.OFFLINE
-        self._settings_dir: Path | None = None
+        self._settings_path: Path | None = None
         # approval_id → asyncio.Event + decision dict
         self._pending_approvals: dict[str, tuple[threading.Event, _JsonDict]] = {}
         # Set when the CLI is ready to accept input (SessionStart hook fires)
@@ -79,7 +79,7 @@ class ClaudeBridge(AgentBridge):
             agent_id=agent_id,
             receiver_port=self._receiver_port,
         )
-        self._settings_dir = settings_path.parent
+        self._settings_path = settings_path
 
         # Register ourselves as the handler for this agent's hooks
         register_hook_handler(agent_id, self._handle_hook)
@@ -96,10 +96,11 @@ class ClaudeBridge(AgentBridge):
             for tool_name in ("chat_join", "chat_read", "chat_rules", "chat_send"):
                 cmd.extend(["--allowedTools", f"mcp__duckdome__{tool_name}"])
 
+        # Load hook settings via --settings flag (not an env var)
+        cmd.extend(["--settings", str(settings_path)])
+
         env = os.environ.copy()
         env.update(config.extra.get("env", {}))
-        # Point Claude at our hook settings directory
-        env["CLAUDE_LOCAL_SETTINGS_DIR"] = str(self._settings_dir)
 
         creationflags = 0
         if sys.platform == "win32":
