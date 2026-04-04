@@ -28,7 +28,7 @@ class _PendingPrompt:
     deny_key: str
 
 
-def _read_console_buffer(pid: int, lines: int = 50) -> str:
+def _read_console_buffer(pid: int, lines: int = 80) -> str:
     """Read the agent's console buffer via subprocess.
 
     Spawns console_reader.py in a separate process to avoid
@@ -40,6 +40,8 @@ def _read_console_buffer(pid: int, lines: int = 50) -> str:
              str(pid), str(lines)],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
         )
@@ -87,9 +89,10 @@ class ConsoleMonitor:
         self._poll_interval = poll_interval
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._seen: set[str] = set()
         self._pending: dict[str, _PendingPrompt] = {}
         self._last_buffer = ""
+        self._last_fingerprint: str | None = None
+        self._poll_count = 0
 
     @property
     def channel_id(self) -> str:
@@ -126,16 +129,31 @@ class ConsoleMonitor:
 
     def _poll_once(self) -> None:
         # 1. Read console buffer
+        self._poll_count += 1
         buffer = _read_console_buffer(self._pid)
-        if not buffer or buffer == self._last_buffer:
+        if self._poll_count % 10 == 0:
+            logger.info("[%s] monitor heartbeat: poll=%d buf_len=%d pending=%d seen=%d",
+                        self._agent_type, self._poll_count, len(buffer), len(self._pending), len(self._seen))
+        if not buffer:
+            logger.warning("[%s] console buffer empty (pid=%d)", self._agent_type, self._pid)
             self._check_pending_resolutions()
             return
-        self._last_buffer = buffer
 
-        # 2. Check for permission prompts
+        changed = buffer != self._last_buffer
+        if changed:
+            preview = buffer[-300:].replace("\n", "\\n")
+            logger.debug("[%s] console buffer changed (pid=%d): ...%s", self._agent_type, self._pid, preview)
+            self._last_buffer = buffer
+
+        # 2. Check for permission prompts.
+        # Use buffer-change detection: only emit a new approval when the
+        # buffer has actually changed AND contains a prompt.  This allows
+        # the same tool+description to appear multiple times (the old
+        # fingerprint-set approach silently dropped repeated identical
+        # prompts).
         match = match_permission_prompt(buffer, self._agent_type)
-        if match and match.fingerprint not in self._seen:
-            self._seen.add(match.fingerprint)
+        if match and changed and match.fingerprint != self._last_fingerprint:
+            self._last_fingerprint = match.fingerprint
             logger.info("[%s] permission prompt detected: tool=%s desc=%s",
                         self._agent_type, match.tool, match.description)
 
@@ -159,6 +177,11 @@ class ConsoleMonitor:
             elif result.status == "denied":
                 _inject_response(self._pid, match.deny_key,
                                  self._inject_delay)
+
+        # If the buffer no longer contains a prompt, clear the last
+        # fingerprint so the next occurrence (even identical) is captured.
+        if not match:
+            self._last_fingerprint = None
 
         # 3. Check pending approvals for resolution
         self._check_pending_resolutions()

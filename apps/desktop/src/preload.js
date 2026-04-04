@@ -9,4 +9,7 @@ contextBridge.exposeInMainWorld("duckdome", {
       return { canceled: true };
     }
   },
+  notify: (title, body) => {
+    ipcRenderer.invoke("desktop:notify", { title, body });
+  },
 });

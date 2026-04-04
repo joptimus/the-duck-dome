@@ -52,3 +52,8 @@ class ChannelService:
             raise ValueError(f"Channel not found: {channel_id}")
         agent_id = f"{channel_id}:{agent_type}"
         return self._store.remove_agent(agent_id)
+
+    def delete_channel(self, channel_id: str) -> bool:
+        if channel_id == "general":
+            raise ValueError("Cannot delete the general channel")
+        return self._store.delete_channel(channel_id)

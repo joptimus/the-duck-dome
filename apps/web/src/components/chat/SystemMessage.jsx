@@ -23,9 +23,7 @@ export function SystemMessage({ msg, idx = 0 }) {
   const isLeave = msg.subtype === 'leave';
   const isError = msg.subtype === 'error';
 
-  const animStyle = {
-    animation: `fadeUp 0.3s ease ${idx * 0.06}s both`,
-  };
+  const animStyle = { animation: 'fadeUp 0.45s cubic-bezier(0.4, 0, 0.2, 1) both' };
 
   // ── Join / Leave ──
   if (isJoin || isLeave) {

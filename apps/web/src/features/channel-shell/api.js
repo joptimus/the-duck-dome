@@ -57,6 +57,12 @@ export async function createChannel(payload) {
   }
 }
 
+export async function deleteChannel(channelId) {
+  return request(`/api/channels/${encodeURIComponent(channelId)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function getChannel(channelId) {
   try {
     return await request(`/api/channels/${encodeURIComponent(channelId)}`);
@@ -189,6 +195,14 @@ export async function sendChannelMessage({ channelId, text, sender = "human", re
 export async function deleteChannelMessage(messageId) {
   return request(`/api/messages/${encodeURIComponent(messageId)}`, {
     method: "DELETE",
+  });
+}
+
+export async function bootChannel(channelId) {
+  return request("/api/wrapper/boot-channel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channel: channelId }),
   });
 }
 

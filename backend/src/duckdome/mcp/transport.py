@@ -11,12 +11,38 @@ from __future__ import annotations
 
 import logging
 import os
+from urllib.parse import parse_qs
 
 import uvicorn
 
+from duckdome.mcp.auth import reset_request_token, set_request_token
 from duckdome.mcp.bridge import McpBridge
 
 logger = logging.getLogger(__name__)
+
+
+class _TokenBoundMcpApp:
+    def __init__(self, app) -> None:
+        self._app = app
+
+    async def __call__(self, scope, receive, send) -> None:
+        token = None
+        if scope.get("type") == "http":
+            query = parse_qs((scope.get("query_string") or b"").decode("utf-8"))
+            token = (query.get("duckdome_token") or [None])[0]
+            if token is None:
+                for raw_key, raw_val in scope.get("headers", []):
+                    if raw_key.lower() != b"authorization":
+                        continue
+                    value = raw_val.decode("utf-8", errors="ignore").strip()
+                    if value.lower().startswith("bearer "):
+                        token = value[7:].strip()
+                    break
+        state = set_request_token(token)
+        try:
+            await self._app(scope, receive, send)
+        finally:
+            reset_request_token(state)
 
 
 def get_mcp_port() -> int:
@@ -39,7 +65,7 @@ def run_mcp_server(bridge: McpBridge, host: str = "127.0.0.1") -> None:
     the main FastAPI server.
     """
     port = get_mcp_port()
-    mcp_app = bridge.mcp.streamable_http_app()
+    mcp_app = _TokenBoundMcpApp(bridge.mcp.streamable_http_app())
     try:
         logger.info("MCP transport starting on %s:%d", host, port)
         uvicorn.run(mcp_app, host=host, port=port, log_level="warning")

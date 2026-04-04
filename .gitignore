@@ -107,3 +107,8 @@ uploads/
 # AI agent tool directories
 .claude/
 .claire/
+
+# AI agent temp/scratch directories
+.tmp_*/
+_pytest_tmp/
+docs/superpowers/

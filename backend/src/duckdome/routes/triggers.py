@@ -71,6 +71,29 @@ def heartbeat(body: HeartbeatRequest):
     return agent.model_dump()
 
 
+class SetStatusRequest(BaseModel):
+    channel_id: str = Field(min_length=1)
+    agent_type: str = Field(min_length=1)
+    status: str = Field(min_length=1)
+
+
+@router.post("/api/agents/status", status_code=200)
+def set_agent_status(body: SetStatusRequest):
+    svc = _get_service()
+    agent_id = f"{body.channel_id}:{body.agent_type}"
+    agent = svc._channels.get_agent(agent_id)
+    if agent is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    agent.status = body.status
+    svc._channels.update_agent(agent_id, agent)
+    svc._broadcast({
+        "type": "agent_status_change",
+        "agent_id": agent_id,
+        "status": body.status,
+    })
+    return agent.model_dump()
+
+
 @router.post("/api/agents/deregister", status_code=200)
 def deregister_agent(body: DeregisterRequest):
     svc = _get_service()
