@@ -267,6 +267,19 @@ class TestCodexBridgeMessageClassification:
 # ===========================================================================
 
 class TestClaudeBridgeHooks:
+    def test_send_prompt_fails_fast_when_mcp_config_path_is_missing(self, monkeypatch):
+        bridge = _make_claude_bridge()
+        bridge._config = AgentConfig(
+            agent_type="claude",
+            channel_id="general",
+            cwd="/tmp",
+            extra={"mcp_config_path": "/tmp/does-not-exist-mcp-config.json"},
+        )
+        monkeypatch.setattr("duckdome.bridges.claude_bridge.shutil.which", lambda _: "/usr/bin/claude")
+
+        with pytest.raises(FileNotFoundError, match="Claude MCP config not found"):
+            asyncio.run(bridge.send_prompt("hello", "general", "system"))
+
     def test_pre_tool_use_emits_tool_call(self):
         bridge = _make_claude_bridge()
         events = _collect(bridge, bridge.TOOL_CALL)
@@ -505,7 +518,12 @@ class TestManagerBridgeRouting:
 
         assert fake_bridge.started is True
         assert fake_bridge.stopped is True
-        assert len(fake_bridge.sent_prompts) == 1
-        assert 'chat_join(channel="room-1", agent_type="codex")' in fake_bridge.sent_prompts[0][0]
+        # 2 prompts: startup prompt (sent at bridge start) + trigger prompt
+        assert len(fake_bridge.sent_prompts) == 2
+        startup_text, _startup_channel, startup_sender = fake_bridge.sent_prompts[0]
+        assert "#room-1" in startup_text
+        assert startup_sender == "system"
+        trigger_text = fake_bridge.sent_prompts[1][0]
+        assert "you were mentioned" in trigger_text
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["send_prompt"]
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["stop"]

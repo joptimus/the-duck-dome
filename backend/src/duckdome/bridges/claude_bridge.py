@@ -1,20 +1,14 @@
-"""ClaudeBridge — controls a Claude Code agent via HTTP hooks + keystroke injection.
+"""ClaudeBridge — controls a Claude Code agent via --print mode + HTTP hooks.
 
-Claude Code does not have a programmatic prompt API like Codex's app-server,
-so this bridge uses:
-
-- **HTTP hooks** (settings.local.json) for observing and gating tool calls
-- **Keystroke injection** (existing injector module) for sending prompts
-- **Process management** for lifecycle control
+Each send_prompt() spawns a fresh `claude --print <text>` process.
+HTTP hooks (settings.local.json) observe tool calls and gate permissions.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import shutil
 import subprocess
-import sys
 import threading
 import uuid
 from pathlib import Path
@@ -30,13 +24,11 @@ from duckdome.bridges.events import (
     AgentMessageEvent,
     AgentStatus,
     ApprovalRequestEvent,
-    ErrorEvent,
     StatusChangeEvent,
     SubagentEvent,
     ToolCallEvent,
     ToolResultEvent,
 )
-from duckdome.wrapper.injector import inject
 
 logger = logging.getLogger(__name__)
 
@@ -45,7 +37,13 @@ PreToolUseHandler = Callable[[str, dict[str, object], str], _JsonDict]
 
 
 class ClaudeBridge(AgentBridge):
-    """Bridge to a Claude Code agent via HTTP hooks and keystroke injection."""
+    """Bridge to a Claude Code agent using --print mode.
+
+    Each send_prompt() spawns a fresh `claude --print <text>` process.
+    No persistent session or keystroke injection needed — Claude uses
+    the DuckDome MCP tools (chat_read, chat_send) to communicate.
+    The channel/identity context is injected via --append-system-prompt.
+    """
 
     def __init__(self, receiver_port: int) -> None:
         super().__init__()
@@ -53,12 +51,10 @@ class ClaudeBridge(AgentBridge):
         self._agent_id: str = ""
         self._config: AgentConfig | None = None
         self._proc: subprocess.Popen[str] | None = None
+        self._proc_lock = threading.Lock()
         self._status = AgentStatus.OFFLINE
-        self._settings_dir: Path | None = None
-        # approval_id → asyncio.Event + decision dict
+        self._settings_path: Path | None = None
         self._pending_approvals: dict[str, tuple[threading.Event, _JsonDict]] = {}
-        # Set when the CLI is ready to accept input (SessionStart hook fires)
-        self._ready = threading.Event()
         self._pre_tool_use_handler: PreToolUseHandler | None = None
 
     # ------------------------------------------------------------------
@@ -66,7 +62,7 @@ class ClaudeBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def start(self, agent_id: str, config: AgentConfig) -> None:
-        self._ready.clear()
+        """Store config and generate hook settings. No persistent process."""
         self._agent_id = agent_id
         self._config = config
 
@@ -74,51 +70,17 @@ class ClaudeBridge(AgentBridge):
         if claude_bin is None:
             raise FileNotFoundError("claude binary not found on PATH")
 
-        # Generate hook settings pointing at our receiver
+        # Generate hook settings for tool call observation
         settings_path = generate_claude_hook_settings(
             agent_id=agent_id,
             receiver_port=self._receiver_port,
         )
-        self._settings_dir = settings_path.parent
+        self._settings_path = settings_path
 
-        # Register ourselves as the handler for this agent's hooks
+        # Register hook handler for tool call events
         register_hook_handler(agent_id, self._handle_hook)
 
-        # Build launch command (match legacy launcher in providers.py)
-        mcp_config_path = config.extra.get("mcp_config_path", "")
-        cmd = [claude_bin]
-        if mcp_config_path:
-            cmd.extend([
-                "--mcp-config", str(mcp_config_path),
-                "--strict-mcp-config",
-            ])
-            # Allow DuckDome MCP tools explicitly
-            for tool_name in ("chat_join", "chat_read", "chat_rules", "chat_send"):
-                cmd.extend(["--allowedTools", f"mcp__duckdome__{tool_name}"])
-
-        env = os.environ.copy()
-        env.update(config.extra.get("env", {}))
-        # Point Claude at our hook settings directory
-        env["CLAUDE_LOCAL_SETTINGS_DIR"] = str(self._settings_dir)
-
-        creationflags = 0
-        if sys.platform == "win32":
-            creationflags = subprocess.CREATE_NEW_CONSOLE
-
-        self._proc = subprocess.Popen(
-            cmd,
-            stdin=subprocess.PIPE,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            cwd=config.cwd,
-            env=env,
-            creationflags=creationflags,
-        )
-
-        logger.info(
-            "Claude agent %s started pid=%d with hooks at %s",
-            agent_id, self._proc.pid, settings_path,
-        )
+        logger.info("Claude bridge %s ready (--print mode), hooks at %s", agent_id, settings_path)
 
         self._status = AgentStatus.IDLE
         self._emit(self.STATUS_CHANGE, StatusChangeEvent(
@@ -129,19 +91,18 @@ class ClaudeBridge(AgentBridge):
         ))
 
     async def stop(self) -> None:
-        self._ready.clear()
         unregister_hook_handler(self._agent_id)
 
-        # Fail pending approvals
         for approval_id, (event, decision) in self._pending_approvals.items():
             decision["decision"] = "block"
             decision["reason"] = "Bridge stopping"
             event.set()
         self._pending_approvals.clear()
 
-        if self._proc:
+        with self._proc_lock:
             proc = self._proc
             self._proc = None
+        if proc:
             try:
                 proc.terminate()
                 proc.wait(timeout=5)
@@ -162,20 +123,24 @@ class ClaudeBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def send_prompt(self, text: str, channel_id: str, sender: str) -> None:
-        if not self._proc or self._proc.poll() is not None:
-            raise RuntimeError("Claude process not running")
+        """Spawn `claude --print <text>` and wait for it to complete."""
+        if self._config is None:
+            raise RuntimeError("ClaudeBridge not started")
 
-        # Wait for the CLI to be ready (SessionStart hook fires)
-        ready = await asyncio.to_thread(self._ready.wait, 30)
-        if not ready:
-            raise TimeoutError(
-                f"Claude agent {self._agent_id} did not become ready within 30s"
-            )
+        claude_bin = shutil.which("claude")
+        if claude_bin is None:
+            raise FileNotFoundError("claude binary not found on PATH")
 
-        # Re-check process after the wait — stop() may have fired
-        proc = self._proc
-        if not proc or proc.poll() is not None:
-            raise RuntimeError("Claude process stopped before prompt injection")
+        cmd = [claude_bin, "--print", text]
+
+        if self._settings_path:
+            cmd.extend(["--settings", str(self._settings_path)])
+
+        mcp_config_path = self._config.extra.get("mcp_config_path", "")
+        if mcp_config_path:
+            if not Path(mcp_config_path).exists():
+                raise FileNotFoundError(f"Claude MCP config not found: {mcp_config_path}")
+            cmd.extend(["--mcp-config", mcp_config_path])
 
         self._status = AgentStatus.WORKING
         self._emit(self.STATUS_CHANGE, StatusChangeEvent(
@@ -185,24 +150,40 @@ class ClaudeBridge(AgentBridge):
             status=AgentStatus.WORKING,
         ))
 
-        pid = proc.pid
-        tmux_session = self._config.extra.get("tmux_session") if self._config else None
+        logger.info("[%s] spawning claude --print for channel=%s", self._agent_id, channel_id)
 
-        success = await asyncio.to_thread(
-            inject, text, pid, 0.05, tmux_session=tmux_session,
-        )
-        if not success:
-            logger.error("Failed to inject prompt into Claude agent %s", self._agent_id)
+        def _run() -> int:
+            proc = subprocess.Popen(
+                cmd,
+                cwd=self._config.cwd if self._config else None,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            with self._proc_lock:
+                self._proc = proc
+            try:
+                stdout, stderr = proc.communicate()
+            finally:
+                with self._proc_lock:
+                    if self._proc is proc:
+                        self._proc = None
+            if stdout:
+                logger.debug("[%s] claude stdout: %s", self._agent_id, stdout[:500])
+            if stderr:
+                logger.debug("[%s] claude stderr: %s", self._agent_id, stderr[:500])
+            return proc.returncode
+
+        returncode = await asyncio.to_thread(_run)
+
+        if returncode != 0:
+            logger.warning("[%s] claude --print exited with code %d", self._agent_id, returncode)
 
     async def interrupt(self) -> None:
-        if not self._proc or self._proc.poll() is not None:
-            return
-        # Send Escape key to interrupt Claude
-        pid = self._proc.pid
-        tmux_session = self._config.extra.get("tmux_session") if self._config else None
-        await asyncio.to_thread(
-            inject, "\x1b", pid, 0.01, tmux_session=tmux_session,
-        )
+        with self._proc_lock:
+            proc = self._proc
+        if proc and proc.poll() is None:
+            proc.terminate()
 
     # ------------------------------------------------------------------
     # Approval
@@ -228,7 +209,9 @@ class ClaudeBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def get_status(self) -> AgentStatus:
-        if self._proc and self._proc.poll() is not None:
+        with self._proc_lock:
+            proc = self._proc
+        if proc and proc.poll() is not None:
             self._status = AgentStatus.OFFLINE
         return self._status
 
@@ -295,9 +278,7 @@ class ClaudeBridge(AgentBridge):
                         text=last_msg,
                     ))
             case "SessionStart":
-                if not self._ready.is_set():
-                    logger.info("Claude agent %s ready (SessionStart received)", self._agent_id)
-                    self._ready.set()
+                logger.info("Claude agent %s SessionStart received", self._agent_id)
             case "Notification":
                 logger.info(
                     "Claude notification [%s]: %s",

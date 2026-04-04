@@ -3,54 +3,49 @@ from threading import Thread
 from duckdome.wrapper.manager import (
     AgentProcess,
     AgentProcessManager,
+    _build_startup_prompt,
     _build_trigger_prompt,
     _resolve_inject_delay,
     _should_use_proxy,
 )
 
 
-def test_build_trigger_prompt_includes_trigger_context():
+def test_build_trigger_prompt_is_minimal():
     prompt = _build_trigger_prompt(
         agent_type="codex",
         channel="ch-123",
         sender="human",
         text="Please inspect the failing test and patch it.",
     )
-
-    assert 'chat_join(channel="ch-123", agent_type="codex")' in prompt
-    assert 'chat_read(channel="ch-123")' in prompt
     assert "you were mentioned, take appropriate action" in prompt
-    assert "human asks: Please inspect the failing test and patch it." in prompt
+    # channel/join instructions now live in the startup prompt, not here
+    assert "chat_join" not in prompt
 
 
-def test_build_trigger_prompt_no_text():
-    prompt = _build_trigger_prompt(
-        agent_type="codex",
-        channel="general",
-        sender="claude",
-        text="",
+def test_build_trigger_prompt_same_for_all_agents():
+    claude_prompt = _build_trigger_prompt(
+        agent_type="claude", channel="general", sender="human", text="hi"
     )
-
-    assert 'chat_join(channel="general", agent_type="codex")' in prompt
-    assert "you were mentioned, take appropriate action" in prompt
-    # No "asks:" when text is empty
-    assert "asks:" not in prompt
-
-
-def test_build_trigger_prompt_uses_claude_specific_mcp_wording():
-    prompt = _build_trigger_prompt(
-        agent_type="claude",
-        channel="ch-123",
-        sender="user",
-        text="@claude hi",
+    codex_prompt = _build_trigger_prompt(
+        agent_type="codex", channel="general", sender="human", text="hi"
     )
+    assert claude_prompt == codex_prompt
 
-    assert "DuckDome MCP" in prompt
-    assert 'chat_join(channel="ch-123", agent_type="claude")' in prompt
-    assert 'chat_read(channel="ch-123")' in prompt
-    assert "you were mentioned, take appropriate action" in prompt
-    assert "user asks: @claude hi" in prompt
+
+def test_build_startup_prompt_includes_channel_and_identity():
+    prompt = _build_startup_prompt(agent_type="claude", channel="general")
+    assert "claude" in prompt
+    assert "#general" in prompt
+    assert "chat_read" in prompt
+    assert "chat_send" in prompt
     assert 'sender="claude"' in prompt
+
+
+def test_build_startup_prompt_codex():
+    prompt = _build_startup_prompt(agent_type="codex", channel="backend")
+    assert "codex" in prompt
+    assert "#backend" in prompt
+    assert 'sender="codex"' in prompt
 
 
 class _FakeProxy:
