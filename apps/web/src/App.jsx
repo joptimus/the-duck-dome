@@ -1,9 +1,9 @@
-import { useEffect } from "react";
+import { useLayoutEffect } from "react";
 import ChannelShell from "./features/channel-shell/ChannelShell";
 import { applyUiSettings, loadUiSettings } from "./features/settings/uiPreferences";
 
 function App() {
-  useEffect(() => {
+  useLayoutEffect(() => {
     applyUiSettings(loadUiSettings());
   }, []);
 
