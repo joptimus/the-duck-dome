@@ -77,7 +77,7 @@ def test_claim_empty(client, channel_id):
 
 
 def test_list_triggers_after_mention(client, channel_id):
-    """Sending a @mention creates a delivery but not a trigger (triggers are separate)."""
+    """Sending a @mention creates both a delivery and a trigger."""
     client.post("/api/agents/register", json={
         "channel_id": channel_id, "agent_type": "claude"
     })
@@ -87,10 +87,11 @@ def test_list_triggers_after_mention(client, channel_id):
         "sender": "human",
     })
     assert post_resp.status_code == 201
-    # Triggers are not auto-created from mentions yet
     resp = client.get("/api/triggers", params={"channel_id": channel_id})
     assert resp.status_code == 200
-    assert resp.json() == []
+    triggers = resp.json()
+    assert len(triggers) == 1
+    assert triggers[0]["target_agent_type"] == "claude"
 
 
 def test_claim_and_complete_via_api(client, channel_id):

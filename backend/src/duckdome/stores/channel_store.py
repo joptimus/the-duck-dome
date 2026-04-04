@@ -109,3 +109,18 @@ class ChannelStore(BaseChannelStore):
             del self._agents[agent_id]
             self._save_agents()
             return True
+
+    def delete_channel(self, channel_id: str) -> bool:
+        with self._lock:
+            if channel_id not in self._channels:
+                return False
+            del self._channels[channel_id]
+            self._channel_order = [c for c in self._channel_order if c != channel_id]
+            # Remove agents belonging to the channel
+            agent_ids = [aid for aid, a in self._agents.items() if a.channel_id == channel_id]
+            for aid in agent_ids:
+                del self._agents[aid]
+            self._save_channels()
+            if agent_ids:
+                self._save_agents()
+            return True

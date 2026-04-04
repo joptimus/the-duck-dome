@@ -3,6 +3,7 @@ import {
   addChannelAgent,
   createChannel,
   createJob,
+  deleteChannel,
   deleteChannelMessage,
   deregisterRuntimeAgent,
   triggerAgent,
@@ -37,7 +38,38 @@ import { ScheduleModal } from "../../components/modals/ScheduleModal";
 import CreateChannelModal from "../../components/modals/CreateChannelModal";
 
 const PINNED_MESSAGES_STORAGE_KEY = "duckdome.pinnedMessages";
+const SETTINGS_KEY = "duckdome:settings";
 
+function getDesktopNotificationsEnabled() {
+  try {
+    const raw = localStorage.getItem(SETTINGS_KEY);
+    if (raw) return JSON.parse(raw).desktopNotifications === true;
+  } catch { /* ignore */ }
+  return false;
+}
+
+function fireDesktopNotification(message) {
+  if (!getDesktopNotificationsEnabled()) return;
+  if (document.hasFocus()) return;
+
+  const sender = message.sender || message.author || "Someone";
+  const body = message.content || message.text || "";
+  const title = `${sender} in THE DUCKDOME`;
+
+  // Use Electron main-process notifications when available (reliable on Windows)
+  if (window.duckdome?.notify) {
+    window.duckdome.notify(title, body);
+    return;
+  }
+
+  // Fallback to browser Notification API
+  if (typeof Notification === "undefined") return;
+  if (Notification.permission === "granted") {
+    new Notification(title, { body, tag: message.id });
+  } else if (Notification.permission !== "denied") {
+    Notification.requestPermission();
+  }
+}
 function normalizeChannels(data) {
   if (!Array.isArray(data)) return [];
   return data.map((item, index) => ({
@@ -558,6 +590,7 @@ export default function ChannelShell() {
       const channelId = activeChannelIdRef.current;
 
       if (event.type === "new_message" && event.message) {
+        fireDesktopNotification(event.message);
         const msgChannelId = event.message.channel || event.message.channel_id;
         if (msgChannelId && msgChannelId === channelId) {
           const normalized = normalizeMessages([event.message], channelId);
@@ -608,7 +641,55 @@ export default function ChannelShell() {
 
       if (event.type === "agent_status_change" && event.agent_id) {
         setAgents((prev) =>
-          prev.map((a) => (a.id === event.agent_id ? { ...a, status: event.status } : a)),
+          prev.map((a) =>
+            a.id === event.agent_id
+              ? {
+                  ...a,
+                  status: event.status,
+                  current_task: event.status === "working" ? a.current_task : null,
+                }
+              : a,
+          ),
+        );
+      }
+
+      if (event.type === "agent_tool_call" && event.agent_id) {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === event.agent_id
+              ? {
+                  ...a,
+                  current_task: event.tool_name || a.current_task,
+                }
+              : a,
+          ),
+        );
+      }
+
+      if (event.type === "agent_tool_result" && event.agent_id) {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === event.agent_id
+              ? {
+                  ...a,
+                  current_task: null,
+                  last_error: event.success ? null : (event.output || "Tool execution failed"),
+                }
+              : a,
+          ),
+        );
+      }
+
+      if (event.type === "agent_error" && event.agent_id) {
+        setAgents((prev) =>
+          prev.map((a) =>
+            a.id === event.agent_id
+              ? {
+                  ...a,
+                  last_error: event.error || "Agent error",
+                }
+              : a,
+          ),
         );
       }
 
@@ -628,6 +709,13 @@ export default function ChannelShell() {
           // Add new approval message
           return { ...prev, [approvalChannel]: decorateMessages([...existing, approvalMsg]) };
         });
+      }
+
+      if (event.type === "channel_deleted" && event.channel_id) {
+        setChannels((prev) => prev.filter((ch) => ch.id !== event.channel_id));
+        if (activeChannelIdRef.current === event.channel_id) {
+          setActiveChannelId("general");
+        }
       }
 
       if (event.type === "job_updated" && event.job) {
@@ -802,6 +890,19 @@ export default function ChannelShell() {
     setActiveChannelId(normalized.id);
     setCreateOpen(false);
   };
+
+  const handleDeleteChannel = useCallback(async (channelId) => {
+    if (channelId === "general") return;
+    try {
+      await deleteChannel(channelId);
+      setChannels((prev) => prev.filter((ch) => ch.id !== channelId));
+      if (activeChannelId === channelId) {
+        setActiveChannelId("general");
+      }
+    } catch (err) {
+      console.error("Failed to delete channel:", err);
+    }
+  }, [activeChannelId]);
 
   const handleAddAgent = useCallback(
     async ({ type }) => {
@@ -1038,6 +1139,7 @@ export default function ChannelShell() {
             activeChannel={activeChannelId}
             onSelectChannel={setActiveChannelId}
             onCreateChannel={() => setCreateOpen(true)}
+            onDeleteChannel={handleDeleteChannel}
             onSessionLaunch={() => setSessionLauncherOpen(true)}
             onAddRepo={handleAddRepo}
             onRemoveRepo={handleRemoveRepo}

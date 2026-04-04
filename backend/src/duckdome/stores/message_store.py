@@ -72,6 +72,17 @@ class MessageStore:
         self._rewrite()
         return msg
 
+    def delete_by_channel(self, channel: str) -> int:
+        """Remove all messages belonging to a channel. Returns count removed."""
+        removed = [mid for mid in self._order if self._messages[mid].channel == channel]
+        if not removed:
+            return 0
+        for mid in removed:
+            del self._messages[mid]
+        self._order = [mid for mid in self._order if mid not in set(removed)]
+        self._rewrite()
+        return len(removed)
+
     def list_by_channel(
         self, channel: str, after_id: str | None = None
     ) -> list[Message]:

@@ -58,11 +58,18 @@ def stop_agent(body: StopRequest):
 @router.post("/trigger", status_code=200)
 def trigger_agent(body: TriggerRequest):
     svc = _get_service()
+    # Resolve repo_path from channel so the agent starts in the right CWD
+    cwd = None
+    if _channel_service:
+        ch = _channel_service.get_channel(body.channel)
+        if ch and ch.repo_path:
+            cwd = ch.repo_path
     triggered = svc.trigger(
         agent_type=body.agent_type,
         sender=body.sender,
         text=body.text,
         channel=body.channel,
+        cwd=cwd,
     )
     if not triggered:
         raise HTTPException(status_code=409, detail=f"Agent '{body.agent_type}' is not running")
@@ -75,10 +82,17 @@ class BootChannelRequest(BaseModel):
 
 @router.post("/boot-channel", status_code=200)
 def boot_channel(body: BootChannelRequest):
-    """Start all available agents for a channel and tell them to greet."""
+    """Start all available agents for a channel."""
     import shutil
 
     svc = _get_service()
+    # Resolve repo_path from channel so agents start in the right CWD
+    cwd = None
+    if _channel_service:
+        ch = _channel_service.get_channel(body.channel)
+        if ch and ch.repo_path:
+            cwd = ch.repo_path
+
     started = []
     for agent_type in ["claude", "codex", "gemini"]:
         if not shutil.which(agent_type):
@@ -104,6 +118,7 @@ def boot_channel(body: BootChannelRequest):
                 "Be yourself — keep it natural and brief."
             ),
             channel=body.channel,
+            cwd=cwd,
         )
         started.append(agent_type)
     return {"channel": body.channel, "started": started}

@@ -18,6 +18,8 @@ from duckdome.routes import rules as rules_mod
 from duckdome.routes import repos as repos_mod
 from duckdome.routes import websocket as websocket_mod
 from duckdome.routes import wrapper as wrapper_mod
+from duckdome.routes import settings as settings_mod
+from duckdome.bridges import hooks_router
 from duckdome.services.wrapper_service import WrapperService
 from duckdome.services.channel_service import ChannelService
 from duckdome.services.job_service import JobService
@@ -34,6 +36,7 @@ from duckdome.stores.message_store import MessageStore
 from duckdome.stores.rule_store import RuleStore
 from duckdome.stores.tool_approval_store import ToolApprovalStore
 from duckdome.stores.trigger_store import TriggerStore
+from duckdome.stores.settings_store import SettingsStore
 from duckdome.ws import ConnectionManager
 
 DEV_ORIGINS = [
@@ -79,6 +82,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     rule_store = RuleStore(data_dir=data_dir)
     job_store = JobStore(data_dir=data_dir)
     repo_store = RepoStore(data_dir=data_dir)
+    settings_store = SettingsStore(data_dir=data_dir)
 
     # WebSocket manager
     ws_manager = ConnectionManager()
@@ -117,12 +121,23 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         data_dir=data_dir,
         tool_approval_service=tool_approval_service,
         ws_manager=ws_manager,
+        message_service=message_service,
     )
 
+    # Apply persisted settings to services before routes are ready
+    if settings_store.get("show_agent_windows"):
+        wrapper_service.set_show_windows(True)
+
     # Init routes with dependencies
+    settings_mod.init(settings_store, wrapper_service=wrapper_service)
     messages_mod.init(message_service)
     deliveries_mod.init(message_service)
-    channels_mod.init(channel_service, wrapper_service=wrapper_service)
+    channels_mod.init(
+        channel_service,
+        wrapper_service=wrapper_service,
+        message_store=message_store,
+        ws_manager=ws_manager,
+    )
     triggers_mod.init(trigger_service)
     runners_mod.init(runner_service)
     wrapper_mod.init(wrapper_service, channel_service=channel_service)
@@ -151,5 +166,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     app.include_router(jobs_mod.router)
     app.include_router(repos_mod.router)
     app.include_router(websocket_mod.router)
+    app.include_router(settings_mod.router)
+    app.include_router(hooks_router)
 
     return app

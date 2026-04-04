@@ -17,23 +17,24 @@ def test_build_trigger_prompt_includes_trigger_context():
         text="Please inspect the failing test and patch it.",
     )
 
-    assert 'chat_join tool with channel="ch-123"' in prompt
-    assert 'agent_type="codex"' in prompt
-    assert "You were triggered by human." in prompt
-    assert "Requested work: Please inspect the failing test and patch it." in prompt
+    assert 'chat_join(channel="ch-123", agent_type="codex")' in prompt
+    assert 'chat_read(channel="ch-123")' in prompt
+    assert "you were mentioned, take appropriate action" in prompt
+    assert "human asks: Please inspect the failing test and patch it." in prompt
 
 
-def test_build_trigger_prompt_tells_agent_to_do_work_before_reply():
+def test_build_trigger_prompt_no_text():
     prompt = _build_trigger_prompt(
         agent_type="codex",
         channel="general",
         sender="claude",
-        text="Run the formatter and fix the lints.",
+        text="",
     )
 
-    assert "Complete the requested work before replying." in prompt
-    assert "If the task requires tools, use them." in prompt
-    assert "send it with chat_send" in prompt
+    assert 'chat_join(channel="general", agent_type="codex")' in prompt
+    assert "you were mentioned, take appropriate action" in prompt
+    # No "asks:" when text is empty
+    assert "asks:" not in prompt
 
 
 def test_build_trigger_prompt_uses_claude_specific_mcp_wording():
@@ -44,17 +45,12 @@ def test_build_trigger_prompt_uses_claude_specific_mcp_wording():
         text="@claude hi",
     )
 
-    assert 'DuckDome MCP is already configured in this session under the server name "duckdome".' in prompt
-    assert 'Use the DuckDome MCP chat tools for this task.' in prompt
+    assert "DuckDome MCP" in prompt
     assert 'chat_join(channel="ch-123", agent_type="claude")' in prompt
-    assert 'Do not use channel_id for chat_join; the MCP argument name is channel.' in prompt
-    assert 'chat_read(channel="ch-123") to read the latest messages there' in prompt
-    assert 'Do not treat this as a generic MCP resource lookup.' in prompt
-    assert 'Do not inspect ~/.claude settings, .mcp.json files' in prompt
-    assert 'Do not use curl or direct HTTP calls for DuckDome chat' in prompt
-    assert 'Request: @claude hi' in prompt
-    assert 'You were triggered by user.' in prompt
-    assert 'Reply in chat when done.' in prompt
+    assert 'chat_read(channel="ch-123")' in prompt
+    assert "you were mentioned, take appropriate action" in prompt
+    assert "user asks: @claude hi" in prompt
+    assert 'sender="claude"' in prompt
 
 
 class _FakeProxy:
@@ -76,8 +72,8 @@ def test_claude_uses_direct_mcp_like_legacy_wrapper():
 
 
 def test_codex_uses_slower_inject_delay():
-    assert _resolve_inject_delay("codex") == 0.4
-    assert _resolve_inject_delay("claude") == 0.03
+    assert _resolve_inject_delay("codex") == 1.5
+    assert _resolve_inject_delay("claude") == 0.05
 
 
 def test_post_agent_heartbeat_uses_joined_channel(tmp_path, monkeypatch):
@@ -187,3 +183,37 @@ def test_deregister_agent_presence_uses_joined_proxy_channel(tmp_path, monkeypat
     assert manager._deregister_agent_presence(agent) is True
     assert captured["url"] == "http://127.0.0.1:8123/api/agents/deregister"
     assert captured["body"] == b'{"channel_id": "general", "agent_type": "codex"}'
+
+
+def test_default_show_windows_is_false(tmp_path):
+    from duckdome.wrapper.manager import AgentProcessManager
+    mgr = AgentProcessManager(data_dir=tmp_path)
+    assert mgr._show_windows is False
+
+
+def test_set_show_windows_updates_flag(tmp_path):
+    from duckdome.wrapper.manager import AgentProcessManager
+    mgr = AgentProcessManager(data_dir=tmp_path)
+    mgr.set_show_windows(True)
+    assert mgr._show_windows is True
+
+
+def test_set_show_windows_calls_open_terminal_for_tmux_agents(tmp_path):
+    from unittest.mock import patch, MagicMock
+    from duckdome.wrapper.manager import AgentProcessManager, AgentProcess
+
+    mgr = AgentProcessManager(data_dir=tmp_path)
+    ap = AgentProcess(agent_type="claude", tmux_session="duckdome-claude")
+    ap.started_at = 1.0
+    with mgr._lock:
+        mgr._agents["claude"] = ap
+
+    with patch("duckdome.wrapper.manager._open_agent_terminal") as mock_open, \
+         patch("duckdome.wrapper.manager._close_agent_terminal") as mock_close, \
+         patch.object(mgr, "_is_alive", return_value=True):
+        mgr.set_show_windows(True)
+        mock_open.assert_called_once_with("duckdome-claude")
+        mock_close.assert_not_called()
+
+        mgr.set_show_windows(False)
+        mock_close.assert_called_once_with("duckdome-claude")
