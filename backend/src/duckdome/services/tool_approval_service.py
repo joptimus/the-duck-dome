@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from duckdome.models.tool_approval import ToolApproval, ToolApprovalStatus
 from duckdome.stores.tool_approval_store import ToolApprovalStore
@@ -20,6 +20,7 @@ class ToolApprovalService:
     ) -> None:
         self._store = store
         self._ws_manager = ws_manager
+        self._runtime_resolvers: dict[str, Callable[[str, str | None], None]] = {}
 
     def _broadcast(self, approval: ToolApproval) -> None:
         if self._ws_manager is None:
@@ -64,6 +65,28 @@ class ToolApprovalService:
     def get(self, approval_id: str) -> ToolApproval | None:
         return self._store.get(approval_id)
 
+    def register_runtime_resolver(
+        self,
+        approval_id: str,
+        resolver: Callable[[str, str | None], None],
+    ) -> None:
+        self._runtime_resolvers[approval_id] = resolver
+
+    def clear_runtime_resolver(self, approval_id: str) -> None:
+        self._runtime_resolvers.pop(approval_id, None)
+
+    def _resolve_runtime(
+        self,
+        approval_id: str,
+        *,
+        decision: str,
+        reason: str | None = None,
+    ) -> None:
+        resolver = self._runtime_resolvers.pop(approval_id, None)
+        if resolver is None:
+            return
+        resolver(decision, reason)
+
     def list_pending(self, channel: str | None = None) -> list[ToolApproval]:
         return self._store.list_pending(channel=channel)
 
@@ -81,6 +104,7 @@ class ToolApprovalService:
         if remember:
             self.set_policy(agent=approval.agent, tool=approval.tool, decision="allow")
         self._broadcast(approval)
+        self._resolve_runtime(approval_id, decision="approved")
         return approval
 
     def deny(
@@ -97,6 +121,7 @@ class ToolApprovalService:
         if remember:
             self.set_policy(agent=approval.agent, tool=approval.tool, decision="deny")
         self._broadcast(approval)
+        self._resolve_runtime(approval_id, decision="denied", reason="Denied by user")
         return approval
 
     def set_policy(self, agent: str, tool: str, decision: str) -> None:

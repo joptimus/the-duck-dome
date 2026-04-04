@@ -100,6 +100,10 @@ class CodexBridge(AgentBridge):
 
         args = [codex_bin]
 
+        # Match the legacy Codex launcher: unsafe local tools should request
+        # approval, while the startup-safe DuckDome MCP tools are pre-approved.
+        args.extend(["--ask-for-approval", "untrusted"])
+
         # Pass MCP URL and startup-safe tool approvals (matches legacy launcher)
         if config.mcp_url:
             args.extend(["-c", f'mcp_servers.duckdome.url="{config.mcp_url}"'])
@@ -126,6 +130,13 @@ class CodexBridge(AgentBridge):
             bufsize=1,
         )
 
+        logger.info(
+            "Codex bridge launch: agent=%s cwd=%s args=%s",
+            agent_id,
+            config.cwd,
+            args,
+        )
+
         # Start background reader
         self._read_task = asyncio.create_task(self._read_loop())
 
@@ -147,6 +158,8 @@ class CodexBridge(AgentBridge):
             # Start a thread
             thread_resp = await self._request("thread/start", {
                 "cwd": config.cwd,
+                "approvalPolicy": "untrusted",
+                "approvalsReviewer": "user",
             })
             thread = thread_resp.get("thread", {})
             self._thread_id = thread.get("id") or thread.get("threadId")
@@ -230,10 +243,18 @@ class CodexBridge(AgentBridge):
 
         resp = await self._request("turn/start", {
             "threadId": self._thread_id,
+            "approvalPolicy": "untrusted",
+            "approvalsReviewer": "user",
             "input": [{"type": "text", "text": text}],
         })
         turn = resp.get("turn", {})
         self._active_turn_id = turn.get("id") or turn.get("turnId")
+        logger.info(
+            "Codex turn/start sent: agent=%s channel=%s turn_id=%s",
+            self._agent_id,
+            channel_id,
+            self._active_turn_id,
+        )
 
     async def interrupt(self) -> None:
         if not self._thread_id or not self._active_turn_id:
@@ -248,11 +269,22 @@ class CodexBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def approve(self, approval_id: str) -> None:
+        logger.info(
+            "Codex approval accepted: agent=%s approval_id=%s",
+            self._agent_id,
+            approval_id,
+        )
         fut = self._pending_approvals.pop(approval_id, None)
         if fut and not fut.done():
             fut.set_result({"decision": "accept"})
 
     async def deny(self, approval_id: str, reason: str) -> None:
+        logger.info(
+            "Codex approval denied: agent=%s approval_id=%s reason=%s",
+            self._agent_id,
+            approval_id,
+            reason,
+        )
         fut = self._pending_approvals.pop(approval_id, None)
         if fut and not fut.done():
             fut.set_result({"decision": "decline"})
@@ -353,17 +385,30 @@ class CodexBridge(AgentBridge):
         method = msg["method"]
         params = msg.get("params", {})
         request_id = msg["id"]
+        logger.info(
+            "Codex server request: agent=%s method=%s keys=%s",
+            self._agent_id,
+            method,
+            sorted(params.keys()),
+        )
 
         if method in (
             "item/commandExecution/requestApproval",
             "item/applyPatch/requestApproval",
+            "item/fileChange/requestApproval",
+            "item/permissions/requestApproval",
         ):
             approval_id = params.get("approvalId") or params.get("itemId") or str(uuid.uuid4())
             command = params.get("command", "")
             if method == "item/commandExecution/requestApproval":
                 tool_name = "local_shell"
-            else:
+            elif method in (
+                "item/applyPatch/requestApproval",
+                "item/fileChange/requestApproval",
+            ):
                 tool_name = "apply_patch"
+            else:
+                tool_name = "permissions"
 
             fut: asyncio.Future[_JsonDict] = asyncio.get_running_loop().create_future()
             self._pending_approvals[approval_id] = fut
@@ -377,17 +422,38 @@ class CodexBridge(AgentBridge):
                 tool_input=params,
                 description=command or f"{tool_name} request",
             ))
+            logger.info(
+                "Codex approval requested: agent=%s method=%s approval_id=%s tool=%s item_id=%s",
+                self._agent_id,
+                method,
+                approval_id,
+                tool_name,
+                params.get("itemId", ""),
+            )
 
             try:
                 decision = await asyncio.wait_for(fut, timeout=600)
             except asyncio.TimeoutError:
                 decision = {"decision": "decline"}
+                logger.warning(
+                    "Codex approval timed out: agent=%s approval_id=%s method=%s",
+                    self._agent_id,
+                    approval_id,
+                    method,
+                )
 
+            logger.info(
+                "Codex approval response sent: agent=%s approval_id=%s method=%s decision=%s",
+                self._agent_id,
+                approval_id,
+                method,
+                decision,
+            )
             await self._write(_make_response(request_id, decision))
             return
 
         # Unknown server request — auto-decline
-        logger.warning("Unknown Codex server request: %s", method)
+        logger.warning("Unknown Codex server request: %s params=%s", method, params)
         await self._write(_make_response(request_id, {}))
 
     # ------------------------------------------------------------------
@@ -407,6 +473,11 @@ class CodexBridge(AgentBridge):
                     channel_id=channel_id,
                     status=AgentStatus.WORKING,
                 ))
+                logger.info(
+                    "Codex notification turn/started: agent=%s turn_id=%s",
+                    self._agent_id,
+                    self._active_turn_id,
+                )
 
             case "turn/completed":
                 self._active_turn_id = None
@@ -417,6 +488,7 @@ class CodexBridge(AgentBridge):
                     channel_id=channel_id,
                     status=AgentStatus.IDLE,
                 ))
+                logger.info("Codex notification turn/completed: agent=%s", self._agent_id)
 
             case "item/agentMessage/delta":
                 self._emit(self.MESSAGE_DELTA, AgentMessageDeltaEvent(
@@ -430,6 +502,14 @@ class CodexBridge(AgentBridge):
                 item_type = params.get("type", "")
                 item_id = params.get("itemId", "")
                 if item_type in ("commandExecution", "localShell", "mcpToolCall"):
+                    logger.info(
+                        "Codex notification item/started: agent=%s item_type=%s item_id=%s name=%s",
+                        self._agent_id,
+                        item_type,
+                        item_id,
+                        params.get("name", ""),
+                    )
+                if item_type in ("commandExecution", "localShell", "mcpToolCall"):
                     self._emit(self.TOOL_CALL, ToolCallEvent(
                         agent_id=self._agent_id,
                         agent_type="codex",
@@ -442,6 +522,15 @@ class CodexBridge(AgentBridge):
             case "item/completed":
                 item_type = params.get("type", "")
                 item_id = params.get("itemId", "")
+                if item_type in ("commandExecution", "localShell", "mcpToolCall", "agentMessage"):
+                    logger.info(
+                        "Codex notification item/completed: agent=%s item_type=%s item_id=%s status=%s name=%s",
+                        self._agent_id,
+                        item_type,
+                        item_id,
+                        params.get("status", ""),
+                        params.get("name", ""),
+                    )
                 if item_type == "agentMessage":
                     text_parts = []
                     for content in params.get("content", []):
@@ -466,6 +555,12 @@ class CodexBridge(AgentBridge):
                     ))
 
             case "error":
+                logger.error(
+                    "Codex notification error: agent=%s message=%s details=%s",
+                    self._agent_id,
+                    params.get("message", "Unknown error"),
+                    params.get("codexErrorInfo"),
+                )
                 self._emit(self.ERROR, ErrorEvent(
                     agent_id=self._agent_id,
                     agent_type="codex",
