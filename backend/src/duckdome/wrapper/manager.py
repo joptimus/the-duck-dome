@@ -690,20 +690,25 @@ class AgentProcessManager:
         bridge = self._create_bridge(agent_type, channel_id)
         self._connect_bridge_events(bridge, key)
 
-        config = AgentConfig(
-            agent_type=agent_type,
-            channel_id=channel_id or "general",
-            cwd=_resolve_launch_cwd(cwd),
-            mcp_url=self._mcp_url,
-            extra={
-                "mcp_config_path": str(self._config_dir / f"{agent_type}-mcp.json"),
-            },
-        )
         token = generate_agent_token()
         bound_channel = channel_id or "general"
         agent_auth_store.register(token, channel=bound_channel, agent_type=agent_type)
-        config.mcp_url = f"{self._mcp_url}?duckdome_token={token}"
-        config.extra["duckdome_token"] = token
+        mcp_url_with_token = f"{self._mcp_url}?duckdome_token={token}"
+
+        mcp_config_path = generate_mcp_config(
+            self._config_dir, agent_type, mcp_url_with_token, token
+        )
+
+        config = AgentConfig(
+            agent_type=agent_type,
+            channel_id=bound_channel,
+            cwd=_resolve_launch_cwd(cwd),
+            mcp_url=mcp_url_with_token,
+            extra={
+                "mcp_config_path": str(mcp_config_path),
+                "duckdome_token": token,
+            },
+        )
 
         await bridge.start(agent_id=key, config=config)
         with self._lock:
