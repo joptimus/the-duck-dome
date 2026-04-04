@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 import { BoltIcon } from "../icons";
 import { SectionLabel } from "../primitives";
 import { RightPanel } from "./RightPanel";
+import { applyUiSettings, loadUiSettings, saveUiSettings } from "../../features/settings/uiPreferences";
 import styles from "./SettingsPanel.module.css";
 
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
@@ -22,33 +23,6 @@ async function patchSettings(patch) {
   });
   if (!r.ok) throw new Error(`PATCH /api/settings failed: ${r.status}`);
   return r.json();
-}
-
-const SETTINGS_KEY = "duckdome:settings";
-
-const DEFAULT_SETTINGS = {
-  name: "James",
-  font: "Sans",
-  contrast: "Normal",
-  loopGuard: "4",
-  ruleRefresh: "Every 10 triggers",
-  desktopNotifications: false,
-  soundsEnabled: true,
-  defaultSound: "Soft Chime",
-};
-
-function loadSettings() {
-  try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (raw) return { ...DEFAULT_SETTINGS, ...JSON.parse(raw) };
-  } catch {
-    /* ignore corrupt data */
-  }
-  return { ...DEFAULT_SETTINGS };
-}
-
-function saveSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
 }
 
 function FieldInput({ label, value, onChange }) {
@@ -97,14 +71,14 @@ function Section({ title, children }) {
 }
 
 export function SettingsPanel({ open, onClose }) {
-  const [settings, setSettings] = useState(loadSettings);
+  const [settings, setSettings] = useState(loadUiSettings);
   const [toast, setToast] = useState(false);
   const [showAgentWindows, setShowAgentWindows] = useState(false);
 
   // Reload saved settings when panel opens
   useEffect(() => {
     if (open) {
-      setSettings(loadSettings());
+      setSettings(loadUiSettings());
       fetchSettings().then((s) => setShowAgentWindows(Boolean(s.show_agent_windows)));
     }
   }, [open]);
@@ -121,7 +95,8 @@ export function SettingsPanel({ open, onClose }) {
   };
 
   const handleApply = () => {
-    saveSettings(settings);
+    saveUiSettings(settings);
+    applyUiSettings(settings);
     // Request browser notification permission when enabling desktop notifications
     if (settings.desktopNotifications && typeof Notification !== "undefined" && Notification.permission === "default") {
       Notification.requestPermission();
@@ -131,7 +106,7 @@ export function SettingsPanel({ open, onClose }) {
   };
 
   const handleCancel = () => {
-    setSettings(loadSettings());
+    setSettings(loadUiSettings());
     onClose();
   };
 

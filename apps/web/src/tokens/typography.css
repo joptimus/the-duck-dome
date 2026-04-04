@@ -26,3 +26,8 @@
   --ls-xl: 0.14em;
   --ls-xxl: 0.15em;
 }
+
+:root[data-ui-font="mono"] {
+  --font-body: "JetBrains Mono", monospace;
+  --font-label: "JetBrains Mono", monospace;
+}
