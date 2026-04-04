@@ -26,7 +26,11 @@ export function loadUiSettings() {
 }
 
 export function saveUiSettings(settings) {
-  localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+  } catch {
+    /* ignore storage failures */
+  }
 }
 
 export function applyFontPreference(font) {

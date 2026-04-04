@@ -51,6 +51,7 @@ class ClaudeBridge(AgentBridge):
         self._agent_id: str = ""
         self._config: AgentConfig | None = None
         self._proc: subprocess.Popen[str] | None = None
+        self._proc_lock = threading.Lock()
         self._status = AgentStatus.OFFLINE
         self._settings_path: Path | None = None
         self._pending_approvals: dict[str, tuple[threading.Event, _JsonDict]] = {}
@@ -98,9 +99,10 @@ class ClaudeBridge(AgentBridge):
             event.set()
         self._pending_approvals.clear()
 
-        if self._proc:
+        with self._proc_lock:
             proc = self._proc
             self._proc = None
+        if proc:
             try:
                 proc.terminate()
                 proc.wait(timeout=5)
@@ -156,9 +158,14 @@ class ClaudeBridge(AgentBridge):
                 stderr=subprocess.PIPE,
                 text=True,
             )
-            self._proc = proc
-            stdout, stderr = proc.communicate()
-            self._proc = None
+            with self._proc_lock:
+                self._proc = proc
+            try:
+                stdout, stderr = proc.communicate()
+            finally:
+                with self._proc_lock:
+                    if self._proc is proc:
+                        self._proc = None
             if stdout:
                 logger.debug("[%s] claude stdout: %s", self._agent_id, stdout[:500])
             if stderr:
@@ -171,7 +178,8 @@ class ClaudeBridge(AgentBridge):
             logger.warning("[%s] claude --print exited with code %d", self._agent_id, returncode)
 
     async def interrupt(self) -> None:
-        proc = self._proc
+        with self._proc_lock:
+            proc = self._proc
         if proc and proc.poll() is None:
             proc.terminate()
 
@@ -199,7 +207,9 @@ class ClaudeBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def get_status(self) -> AgentStatus:
-        if self._proc and self._proc.poll() is not None:
+        with self._proc_lock:
+            proc = self._proc
+        if proc and proc.poll() is not None:
             self._status = AgentStatus.OFFLINE
         return self._status
 

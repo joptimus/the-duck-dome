@@ -507,7 +507,7 @@ class TestManagerBridgeRouting:
         assert fake_bridge.stopped is True
         # 2 prompts: startup prompt (sent at bridge start) + trigger prompt
         assert len(fake_bridge.sent_prompts) == 2
-        startup_text, startup_channel, startup_sender = fake_bridge.sent_prompts[0]
+        startup_text, _startup_channel, startup_sender = fake_bridge.sent_prompts[0]
         assert "#room-1" in startup_text
         assert startup_sender == "system"
         trigger_text = fake_bridge.sent_prompts[1][0]
