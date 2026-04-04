@@ -137,7 +137,9 @@ class ClaudeBridge(AgentBridge):
             cmd.extend(["--settings", str(self._settings_path)])
 
         mcp_config_path = self._config.extra.get("mcp_config_path", "")
-        if mcp_config_path and Path(mcp_config_path).exists():
+        if mcp_config_path:
+            if not Path(mcp_config_path).exists():
+                raise FileNotFoundError(f"Claude MCP config not found: {mcp_config_path}")
             cmd.extend(["--mcp-config", mcp_config_path])
 
         self._status = AgentStatus.WORKING
