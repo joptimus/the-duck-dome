@@ -6,6 +6,7 @@ registry keyed by agent_id (passed as a query parameter).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Callable
 
@@ -58,8 +59,14 @@ async def receive_claude_hook(
     hook_event = body.get("hook_event_name", "")
     logger.debug("Hook %s from agent %s", hook_event, agent)
 
+    # Handler is synchronous and may block on threading.Event.wait() for
+    # several minutes (e.g. PermissionRequest waiting on user approval).
+    # Run it in a worker thread so the asyncio event loop stays responsive —
+    # otherwise the approve endpoint (and every other API route) cannot run
+    # until the hook unblocks, which is a self-deadlock because the approve
+    # endpoint is what unblocks the hook.
     try:
-        response = handler(hook_event, body)
+        response = await asyncio.to_thread(handler, hook_event, body)
     except Exception:
         logger.exception("Hook handler error for agent %s event %s", agent, hook_event)
         response = {}
