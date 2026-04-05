@@ -100,10 +100,16 @@ class GeminiBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def approve(self, approval_id: str) -> None:
-        raise NotImplementedError
+        fut = self._pending_approvals.pop(approval_id, None)
+        if fut and not fut.done():
+            opt = getattr(fut, "_gemini_allow_option", {"optionId": "allow_once"})
+            fut.set_result({"optionId": opt["optionId"]})
 
     async def deny(self, approval_id: str, reason: str) -> None:
-        raise NotImplementedError
+        fut = self._pending_approvals.pop(approval_id, None)
+        if fut and not fut.done():
+            opt = getattr(fut, "_gemini_reject_option", {"optionId": "reject_once"})
+            fut.set_result({"optionId": opt["optionId"]})
 
     # ------------------------------------------------------------------
     # Status
@@ -197,13 +203,72 @@ class GeminiBridge(AgentBridge):
             return
 
     async def _handle_server_request(self, msg: _JsonDict) -> None:
-        """Handle an incoming JSON-RPC request from gemini (approvals, fs proxy).
-
-        Filled in by Task 4 (approvals) and Task 5 (fs proxy).
-        """
+        """Handle an incoming JSON-RPC request from gemini (approvals, fs proxy)."""
+        method = msg.get("method", "")
+        params = msg.get("params", {}) or {}
         request_id = msg["id"]
-        logger.warning("Unhandled Gemini server request: %s", msg.get("method"))
+
+        if method == "session/request_permission":
+            await self._handle_permission_request(request_id, params)
+            return
+
+        if method == "fs/read_text_file":
+            await self._handle_fs_read(request_id, params)
+            return
+
+        if method == "fs/write_text_file":
+            await self._handle_fs_write(request_id, params)
+            return
+
+        logger.warning("Unhandled Gemini server request: %s", method)
         await self._write(_make_error_response(request_id, -32601, "Method not implemented"))
+
+    async def _handle_permission_request(self, request_id: str, params: _JsonDict) -> None:
+        tool_call = params.get("toolCall", {}) or {}
+        approval_id = tool_call.get("toolCallId") or str(uuid.uuid4())
+        tool_name = tool_call.get("title") or tool_call.get("kind", "tool")
+        tool_input = tool_call.get("rawInput", {}) or {}
+        options = params.get("options", []) or []
+
+        allow_option = next(
+            (o for o in options if o.get("kind") == "allow_once"),
+            options[0] if options else {"optionId": "allow"},
+        )
+        reject_option = next(
+            (o for o in options if o.get("kind") == "reject_once"),
+            options[-1] if options else {"optionId": "reject"},
+        )
+
+        fut: asyncio.Future[_JsonDict] = asyncio.get_running_loop().create_future()
+        self._pending_approvals[approval_id] = fut
+        fut._gemini_allow_option = allow_option  # type: ignore[attr-defined]
+        fut._gemini_reject_option = reject_option  # type: ignore[attr-defined]
+
+        self._emit(self.APPROVAL_REQUEST, ApprovalRequestEvent(
+            agent_id=self._agent_id,
+            agent_type="gemini",
+            channel_id=self._config.channel_id if self._config else "",
+            approval_id=approval_id,
+            tool_name=tool_name,
+            tool_input=tool_input,
+            description=tool_call.get("title", tool_name),
+        ))
+
+        try:
+            decision = await asyncio.wait_for(fut, timeout=600)
+        except asyncio.TimeoutError:
+            decision = {"optionId": reject_option.get("optionId", "reject_once")}
+            logger.warning("Gemini approval timed out: approval_id=%s", approval_id)
+
+        await self._write(_make_response(request_id, {
+            "outcome": {"outcome": "selected", "optionId": decision["optionId"]},
+        }))
+
+    async def _handle_fs_read(self, request_id: str, params: _JsonDict) -> None:
+        await self._write(_make_error_response(request_id, -32601, "fs/read_text_file not yet implemented"))
+
+    async def _handle_fs_write(self, request_id: str, params: _JsonDict) -> None:
+        await self._write(_make_error_response(request_id, -32601, "fs/write_text_file not yet implemented"))
 
     def _handle_notification(self, method: str, params: _JsonDict) -> None:
         """Handle a JSON-RPC notification from gemini.

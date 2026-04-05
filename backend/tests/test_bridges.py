@@ -767,3 +767,79 @@ class TestGeminiBridgeNotifications:
             "sessionId": "s1",
             "update": {"sessionUpdate": "future_unknown_kind", "foo": "bar"},
         })
+
+
+class TestGeminiBridgeApproval:
+    def test_request_permission_emits_approval_event(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            events = _collect(bridge, bridge.APPROVAL_REQUEST)
+
+            async def approve_soon():
+                while not bridge._pending_approvals:
+                    await asyncio.sleep(0.01)
+                approval_id = next(iter(bridge._pending_approvals))
+                await bridge.approve(approval_id)
+            asyncio.create_task(approve_soon())
+
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0",
+                "id": "srv-1",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "s1",
+                    "toolCall": {
+                        "toolCallId": "tc1",
+                        "title": "run shell",
+                        "rawInput": {"command": "rm -rf /"},
+                    },
+                    "options": [
+                        {"optionId": "allow_once", "name": "Allow once", "kind": "allow_once"},
+                        {"optionId": "reject_once", "name": "Reject", "kind": "reject_once"},
+                    ],
+                },
+            })
+
+            assert len(events) == 1
+            assert events[0].approval_id == "tc1"
+            assert events[0].tool_name == "run shell"
+            assert any(
+                m.get("id") == "srv-1" and m.get("result", {}).get("outcome", {}).get("outcome") == "selected"
+                for m in sent
+            )
+        asyncio.run(_run())
+
+    def test_deny_selects_reject_option(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+
+            async def deny_soon():
+                while not bridge._pending_approvals:
+                    await asyncio.sleep(0.01)
+                approval_id = next(iter(bridge._pending_approvals))
+                await bridge.deny(approval_id, "nope")
+            asyncio.create_task(deny_soon())
+
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0",
+                "id": "srv-2",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "s1",
+                    "toolCall": {"toolCallId": "tc2", "title": "bad", "rawInput": {}},
+                    "options": [
+                        {"optionId": "allow_once", "name": "Allow", "kind": "allow_once"},
+                        {"optionId": "reject_once", "name": "Reject", "kind": "reject_once"},
+                    ],
+                },
+            })
+
+            reply = next(m for m in sent if m.get("id") == "srv-2")
+            assert reply["result"]["outcome"]["optionId"] == "reject_once"
+        asyncio.run(_run())
