@@ -527,3 +527,28 @@ class TestManagerBridgeRouting:
         assert "you were mentioned" in trigger_text
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["send_prompt"]
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["stop"]
+
+
+# ===========================================================================
+# Test: GeminiBridge construction
+# ===========================================================================
+
+from duckdome.bridges.gemini_bridge import GeminiBridge
+
+
+def _make_gemini_bridge() -> GeminiBridge:
+    bridge = GeminiBridge()
+    bridge._agent_id = "gemini--test"
+    bridge._config = AgentConfig(agent_type="gemini", channel_id="general", cwd="/tmp")
+    return bridge
+
+
+class TestGeminiBridgeConstruction:
+    def test_is_agent_bridge(self):
+        bridge = _make_gemini_bridge()
+        assert isinstance(bridge, AgentBridge)
+
+    def test_initial_state(self):
+        bridge = _make_gemini_bridge()
+        assert bridge._session_id is None
+        assert bridge._status == AgentStatus.OFFLINE

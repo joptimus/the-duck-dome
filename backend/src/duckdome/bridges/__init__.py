@@ -7,6 +7,7 @@ from duckdome.bridges.base import AgentBridge, AgentConfig
 from duckdome.bridges.claude_bridge import ClaudeBridge
 from duckdome.bridges.claude_hook_receiver import router as hooks_router
 from duckdome.bridges.codex_bridge import CodexBridge
+from duckdome.bridges.gemini_bridge import GeminiBridge
 from duckdome.bridges.events import (
     AgentMessageDeltaEvent,
     AgentMessageEvent,
@@ -29,6 +30,7 @@ __all__ = [
     "ClaudeBridge",
     "CodexBridge",
     "ErrorEvent",
+    "GeminiBridge",
     "StatusChangeEvent",
     "SubagentEvent",
     "ToolCallEvent",
