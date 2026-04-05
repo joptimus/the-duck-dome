@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from duckdome.bridges.base import AgentBridge, AgentConfig
 from duckdome.bridges.codex_bridge import CodexBridge
 from duckdome.bridges.claude_bridge import ClaudeBridge
+from duckdome.bridges.gemini_bridge import GeminiBridge
 from duckdome.bridges.claude_hook_receiver import (
     register_hook_handler,
     unregister_hook_handler,
@@ -434,8 +435,8 @@ class TestManagerBridgeRouting:
     def test_use_bridge_claude(self):
         assert AgentProcessManager._use_bridge("claude") is True
 
-    def test_use_bridge_gemini_legacy(self):
-        assert AgentProcessManager._use_bridge("gemini") is False
+    def test_use_bridge_gemini(self):
+        assert AgentProcessManager._use_bridge("gemini") is True
 
     def test_create_bridge_codex(self, tmp_path):
         mgr = AgentProcessManager(data_dir=tmp_path)
@@ -447,10 +448,15 @@ class TestManagerBridgeRouting:
         bridge = mgr._create_bridge("claude", "general")
         assert isinstance(bridge, ClaudeBridge)
 
+    def test_create_bridge_gemini(self, tmp_path):
+        mgr = AgentProcessManager(data_dir=tmp_path)
+        bridge = mgr._create_bridge("gemini", "general")
+        assert isinstance(bridge, GeminiBridge)
+
     def test_create_bridge_unknown_raises(self, tmp_path):
         mgr = AgentProcessManager(data_dir=tmp_path)
         with pytest.raises(ValueError, match="No bridge"):
-            mgr._create_bridge("gemini", "general")
+            mgr._create_bridge("nonexistent", "general")
 
     def test_connect_bridge_events_wires_status(self, tmp_path):
         mgr = AgentProcessManager(data_dir=tmp_path)
@@ -532,9 +538,6 @@ class TestManagerBridgeRouting:
 # ===========================================================================
 # Test: GeminiBridge construction
 # ===========================================================================
-
-from duckdome.bridges.gemini_bridge import GeminiBridge
-
 
 def _make_gemini_bridge() -> GeminiBridge:
     bridge = GeminiBridge()
