@@ -208,9 +208,70 @@ class GeminiBridge(AgentBridge):
     def _handle_notification(self, method: str, params: _JsonDict) -> None:
         """Handle a JSON-RPC notification from gemini.
 
-        Filled in by Task 3.
+        Currently only ``session/update`` is surfaced; other methods are
+        logged at debug and dropped.
         """
-        logger.debug("Unhandled Gemini notification: %s", method)
+        if method != "session/update":
+            logger.debug("Unhandled Gemini notification: %s", method)
+            return
+
+        channel_id = self._config.channel_id if self._config else ""
+        update = params.get("update", {}) or {}
+        kind = update.get("sessionUpdate", "")
+
+        if kind in ("agent_message_chunk", "agent_thought_chunk"):
+            content = update.get("content", {}) or {}
+            text = ""
+            if isinstance(content, dict) and content.get("type") == "text":
+                text = content.get("text", "") or ""
+            if text:
+                self._emit(self.MESSAGE_DELTA, AgentMessageDeltaEvent(
+                    agent_id=self._agent_id,
+                    agent_type="gemini",
+                    channel_id=channel_id,
+                    delta=text,
+                ))
+            return
+
+        if kind == "tool_call":
+            tool_name = update.get("title") or update.get("kind", "tool")
+            self._emit(self.TOOL_CALL, ToolCallEvent(
+                agent_id=self._agent_id,
+                agent_type="gemini",
+                channel_id=channel_id,
+                tool_name=tool_name,
+                tool_input=update.get("rawInput", {}) or {},
+                call_id=update.get("toolCallId", ""),
+            ))
+            return
+
+        if kind == "tool_call_update":
+            status = update.get("status", "")
+            if status not in ("completed", "failed"):
+                return  # in_progress and other intermediates are ignored
+            raw_output = update.get("rawOutput", {}) or {}
+            if isinstance(raw_output, dict):
+                output_text = (
+                    raw_output.get("stdout")
+                    or raw_output.get("error")
+                    or (json.dumps(raw_output) if raw_output else "")
+                )
+            else:
+                output_text = str(raw_output)
+            self._emit(self.TOOL_RESULT, ToolResultEvent(
+                agent_id=self._agent_id,
+                agent_type="gemini",
+                channel_id=channel_id,
+                tool_name=update.get("title", "") or update.get("kind", ""),
+                call_id=update.get("toolCallId", ""),
+                success=status == "completed",
+                output=output_text or "",
+            ))
+            return
+
+        # user_message_chunk, available_commands_update, current_mode_update,
+        # plan, and any future kinds are intentionally ignored in v1.
+        logger.debug("Ignoring Gemini session/update kind: %s", kind)
 
     def _fail_pending_futures(self, reason: str) -> None:
         err = RuntimeError(reason)

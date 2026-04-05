@@ -622,3 +622,148 @@ class TestGeminiBridgeTransport:
             with pytest.raises(RuntimeError, match="stopping"):
                 app_fut.result()
         asyncio.run(_run())
+
+
+class TestGeminiBridgeNotifications:
+    def test_agent_message_chunk_emits_delta(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.MESSAGE_DELTA)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "hello"},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].delta == "hello"
+        assert events[0].agent_type == "gemini"
+
+    def test_agent_thought_chunk_emits_delta(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.MESSAGE_DELTA)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": {"type": "text", "text": "thinking..."},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].delta == "thinking..."
+
+    def test_agent_message_chunk_without_text_ignored(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.MESSAGE_DELTA)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "image", "data": "..."},
+            },
+        })
+        assert events == []
+
+    def test_tool_call_emits_tool_call_event(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_CALL)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc1",
+                "title": "run shell",
+                "kind": "execute",
+                "status": "pending",
+                "rawInput": {"command": "ls"},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].call_id == "tc1"
+        assert events[0].tool_name == "run shell"
+        assert events[0].tool_input == {"command": "ls"}
+        assert events[0].agent_type == "gemini"
+
+    def test_tool_call_without_title_falls_back_to_kind(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_CALL)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc2",
+                "kind": "read",
+                "rawInput": {},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].tool_name == "read"
+
+    def test_tool_call_update_completed_emits_result(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_RESULT)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc1",
+                "status": "completed",
+                "rawOutput": {"stdout": "hello"},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].call_id == "tc1"
+        assert events[0].success is True
+        assert "hello" in events[0].output
+
+    def test_tool_call_update_failed_emits_failed_result(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_RESULT)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc1",
+                "status": "failed",
+                "rawOutput": {"error": "boom"},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].success is False
+        assert "boom" in events[0].output
+
+    def test_tool_call_update_in_progress_ignored(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_RESULT)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc1",
+                "status": "in_progress",
+            },
+        })
+        assert events == []
+
+    def test_available_commands_update_ignored(self):
+        bridge = _make_gemini_bridge()
+        all_events = []
+        for et in (bridge.MESSAGE, bridge.MESSAGE_DELTA, bridge.TOOL_CALL, bridge.TOOL_RESULT):
+            bridge.on(et, lambda e, _et=et: all_events.append((_et, e)))
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {"sessionUpdate": "available_commands_update", "availableCommands": []},
+        })
+        assert all_events == []
+
+    def test_unknown_top_level_method_does_not_crash(self):
+        bridge = _make_gemini_bridge()
+        # Should just log, not raise
+        bridge._handle_notification("some/unknown/method", {})
+
+    def test_unknown_session_update_kind_does_not_crash(self):
+        bridge = _make_gemini_bridge()
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {"sessionUpdate": "future_unknown_kind", "foo": "bar"},
+        })
