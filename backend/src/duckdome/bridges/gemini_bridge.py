@@ -80,20 +80,148 @@ class GeminiBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def start(self, agent_id: str, config: AgentConfig) -> None:
-        raise NotImplementedError
+        self._agent_id = agent_id
+        self._config = config
+
+        gemini_bin = shutil.which("gemini")
+        if gemini_bin is None:
+            raise FileNotFoundError("gemini binary not found on PATH")
+
+        args = [gemini_bin, "--acp"]
+        env = os.environ.copy()
+        env.update(config.extra.get("env", {}))
+
+        self._proc = subprocess.Popen(
+            args,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            text=True,
+            encoding="utf-8",
+            cwd=config.cwd,
+            env=env,
+            bufsize=1,
+        )
+        logger.info(
+            "Gemini bridge launch: agent=%s cwd=%s args=%s",
+            agent_id, config.cwd, args,
+        )
+
+        self._read_task = asyncio.create_task(self._read_loop())
+
+        try:
+            await self._request("initialize", {
+                "protocolVersion": 1,
+                "clientCapabilities": {
+                    "fs": {"readTextFile": True, "writeTextFile": True},
+                },
+            })
+            mcp_servers: list[_JsonDict] = []
+            if config.mcp_url:
+                mcp_servers.append({
+                    "name": "duckdome",
+                    "url": config.mcp_url,
+                })
+            resp = await self._request("session/new", {
+                "cwd": config.cwd,
+                "mcpServers": mcp_servers,
+            })
+            self._session_id = resp.get("sessionId")
+            if not self._session_id:
+                raise RuntimeError(f"Gemini session/new returned no sessionId: {resp}")
+            logger.info("Gemini session started: %s", self._session_id)
+        except Exception:
+            logger.exception("Gemini init failed for agent %s; cleaning up", agent_id)
+            await self.stop()
+            raise
+
+        self._status = AgentStatus.IDLE
+        self._emit(self.STATUS_CHANGE, StatusChangeEvent(
+            agent_id=agent_id,
+            agent_type="gemini",
+            channel_id=config.channel_id,
+            status=AgentStatus.IDLE,
+        ))
 
     async def stop(self) -> None:
-        raise NotImplementedError
+        self._fail_pending_futures("Bridge stopping")
+
+        if self._read_task and not self._read_task.done():
+            self._read_task.cancel()
+            try:
+                await self._read_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._proc:
+            proc = self._proc
+            self._proc = None
+            if proc.stdin:
+                try:
+                    proc.stdin.close()
+                except Exception:
+                    pass
+            try:
+                proc.terminate()
+                loop = asyncio.get_running_loop()
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, proc.wait),
+                    timeout=2,
+                )
+            except (asyncio.TimeoutError, Exception):
+                try:
+                    proc.kill()
+                    loop = asyncio.get_running_loop()
+                    await loop.run_in_executor(None, proc.wait)
+                except Exception:
+                    pass
+
+        self._status = AgentStatus.OFFLINE
+        if self._config:
+            self._emit(self.STATUS_CHANGE, StatusChangeEvent(
+                agent_id=self._agent_id,
+                agent_type="gemini",
+                channel_id=self._config.channel_id,
+                status=AgentStatus.OFFLINE,
+            ))
 
     # ------------------------------------------------------------------
-    # Communication (filled in by later tasks)
+    # Communication
     # ------------------------------------------------------------------
 
     async def send_prompt(self, text: str, channel_id: str, sender: str) -> None:
-        raise NotImplementedError
+        if not self._session_id:
+            raise RuntimeError("No active Gemini session")
+
+        self._status = AgentStatus.WORKING
+        self._emit(self.STATUS_CHANGE, StatusChangeEvent(
+            agent_id=self._agent_id,
+            agent_type="gemini",
+            channel_id=channel_id,
+            status=AgentStatus.WORKING,
+        ))
+
+        try:
+            await self._request("session/prompt", {
+                "sessionId": self._session_id,
+                "prompt": [{"type": "text", "text": text}],
+            }, timeout=600.0)
+        finally:
+            self._status = AgentStatus.IDLE
+            self._emit(self.STATUS_CHANGE, StatusChangeEvent(
+                agent_id=self._agent_id,
+                agent_type="gemini",
+                channel_id=channel_id,
+                status=AgentStatus.IDLE,
+            ))
 
     async def interrupt(self) -> None:
-        raise NotImplementedError
+        if not self._session_id:
+            return
+        try:
+            await self._notify("session/cancel", {"sessionId": self._session_id})
+        except Exception:
+            logger.exception("Gemini interrupt failed")
 
     # ------------------------------------------------------------------
     # Approval (filled in by later tasks)

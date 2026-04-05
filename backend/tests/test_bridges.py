@@ -914,3 +914,66 @@ class TestGeminiBridgeFsProxy:
             reply = next(m for m in sent if m.get("id") == "fs-4")
             assert "error" in reply
         asyncio.run(_run())
+
+
+class TestGeminiBridgeLifecycle:
+    def test_send_prompt_dispatches_session_prompt(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._session_id = "sess-1"
+            bridge._status = AgentStatus.IDLE
+            calls = []
+            async def fake_request(method, params, timeout=30.0):
+                calls.append((method, params))
+                return {}
+            bridge._request = fake_request  # type: ignore
+
+            await bridge.send_prompt("do the thing", "general", "human")
+
+            assert len(calls) == 1
+            method, params = calls[0]
+            assert method == "session/prompt"
+            assert params["sessionId"] == "sess-1"
+            assert any(
+                isinstance(b, dict) and b.get("type") == "text" and "do the thing" in b.get("text", "")
+                for b in params.get("prompt", [])
+            )
+        asyncio.run(_run())
+
+    def test_send_prompt_without_session_raises(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            with pytest.raises(RuntimeError, match="session"):
+                await bridge.send_prompt("x", "ch", "s")
+        asyncio.run(_run())
+
+    def test_interrupt_sends_session_cancel_notification(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._session_id = "sess-2"
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            await bridge.interrupt()
+            assert len(sent) == 1
+            assert sent[0]["method"] == "session/cancel"
+            assert sent[0]["params"] == {"sessionId": "sess-2"}
+            assert "id" not in sent[0]
+        asyncio.run(_run())
+
+    def test_interrupt_without_session_is_noop(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            await bridge.interrupt()
+            assert sent == []
+        asyncio.run(_run())
+
+    def test_stop_is_idempotent_without_proc(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            await bridge.stop()
+            assert bridge._status == AgentStatus.OFFLINE
+        asyncio.run(_run())
