@@ -18,6 +18,16 @@
   color: var(--agent-color);
 }
 
+.toggleRow:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--agent-color) 60%, transparent);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.toggleRow:focus-visible .toggleLabel {
+  color: var(--agent-color);
+}
+
 .toggleLead {
   display: flex;
   align-items: center;
@@ -159,6 +169,11 @@
   box-shadow: 0 0 10px color-mix(in srgb, var(--agent-color) 40%, transparent);
 }
 
+.toolToggle:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--agent-color) 60%, transparent);
+  outline-offset: 2px;
+}
+
 .toolToggleThumb {
   position: absolute;
   top: 2px;
@@ -200,6 +215,12 @@
 .radioOptionSelected {
   background: color-mix(in srgb, var(--agent-color) 10%, transparent);
   border-color: color-mix(in srgb, var(--agent-color) 30%, transparent);
+}
+
+.radioOption:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--agent-color) 60%, transparent);
+  outline-offset: 2px;
+  background: rgba(255, 255, 255, 0.02);
 }
 
 .radioDot {
@@ -300,4 +321,8 @@
 
 .loopInput:focus {
   border-color: var(--agent-color);
+}
+
+.loopInput:focus-visible {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--agent-color) 45%, transparent);
 }

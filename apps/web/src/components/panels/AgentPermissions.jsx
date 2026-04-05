@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from "react";
-import { agentStore } from "../../stores/agentStore";
 import * as Icons from "../icons";
 import styles from "./AgentPermissions.module.css";
 
@@ -57,6 +56,9 @@ export function AgentPermissions({
   agentColor,
   expanded,
   onToggleExpand,
+  onToggleTool,
+  onSetAutoApprove,
+  onSetMaxLoops,
 }) {
   const [loopDraft, setLoopDraft] = useState(String(permissions.maxLoops));
 
@@ -77,7 +79,7 @@ export function AgentPermissions({
     }
     const nextValue = Math.min(100, Math.max(1, parsed));
     setLoopDraft(String(nextValue));
-    void agentStore.setMaxLoops(agent, nextValue);
+    onSetMaxLoops?.(agent, nextValue);
   };
 
   return (
@@ -137,7 +139,7 @@ export function AgentPermissions({
                       className={`${styles.toolToggle} ${tool.enabled ? styles.toolToggleOn : styles.toolToggleOff}`}
                       aria-pressed={tool.enabled}
                       aria-label={`${tool.enabled ? "Disable" : "Enable"} ${tool.label}`}
-                      onClick={() => void agentStore.toggleTool(agent, tool.key)}
+                      onClick={() => onToggleTool?.(agent, tool.key)}
                     >
                       <span className={`${styles.toolToggleThumb} ${tool.enabled ? styles.toolToggleThumbOn : ""}`} />
                     </button>
@@ -157,7 +159,7 @@ export function AgentPermissions({
                     key={option.value}
                     type="button"
                     className={`${styles.radioOption} ${selected ? styles.radioOptionSelected : ""}`}
-                    onClick={() => void agentStore.setAutoApprove(agent, option.value)}
+                    onClick={() => onSetAutoApprove?.(agent, option.value)}
                   >
                     <span className={`${styles.radioDot} ${selected ? styles.radioDotSelected : ""}`}>
                       {selected ? <span className={styles.radioDotInner} /> : null}
@@ -194,10 +196,6 @@ export function AgentPermissions({
                 value={loopDraft}
                 onChange={(event) => {
                   setLoopDraft(event.target.value);
-                  const parsed = Number.parseInt(event.target.value, 10);
-                  if (Number.isFinite(parsed)) {
-                    void agentStore.setMaxLoops(agent, parsed);
-                  }
                 }}
                 onBlur={(event) => handleLoopCommit(event.target.value)}
               />

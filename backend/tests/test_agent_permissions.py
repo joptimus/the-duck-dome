@@ -103,7 +103,7 @@ def test_auto_approve_tools_allows_enabled_tool_without_pending_approval(client:
         "/api/tool_approvals/request",
         json={
             "agent": "codex",
-            "tool": "local_shell",
+            "tool": "bash",
             "arguments": {"command": "ls"},
             "channel": "general",
         },
@@ -114,6 +114,7 @@ def test_auto_approve_tools_allows_enabled_tool_without_pending_approval(client:
 
 def test_channel_agents_include_permissions(client: TestClient):
     created = client.post("/api/channels", json={"name": "planning", "type": "general"})
+    assert created.status_code == 201
     channel_id = created.json()["id"]
     client.post(f"/api/channels/{channel_id}/agents", json={"agent_type": "claude"})
 

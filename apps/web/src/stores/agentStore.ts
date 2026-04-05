@@ -44,6 +44,7 @@ async function updatePermissions(
   if (!currentAdapter) {
     return;
   }
+  const adapterAtCall = currentAdapter;
 
   const currentAgent = currentAdapter.getAgents().find((agent) => agent.agent_type === agentKey);
   if (!currentAgent) {
@@ -61,13 +62,19 @@ async function updatePermissions(
       buildPermissionsPayload(nextPermissions),
       nextPermissions,
     );
+    if (getAdapter() !== adapterAtCall) {
+      return;
+    }
     const confirmedPermissions = normalizeAgentPermissions(confirmed || nextPermissions);
-    currentAdapter.setAgents((agents) => replacePermissions(agents, agentKey, confirmedPermissions));
-    currentAdapter.setError?.(null);
+    adapterAtCall.setAgents((agents) => replacePermissions(agents, agentKey, confirmedPermissions));
+    adapterAtCall.setError?.(null);
   } catch (error) {
+    if (getAdapter() !== adapterAtCall) {
+      return;
+    }
     console.error("Failed to update agent permissions:", error);
-    currentAdapter.setAgents((agents) => replacePermissions(agents, agentKey, previousPermissions));
-    currentAdapter.setError?.("Failed to update agent permissions");
+    adapterAtCall.setAgents((agents) => replacePermissions(agents, agentKey, previousPermissions));
+    adapterAtCall.setError?.("Failed to update agent permissions");
   }
 }
 

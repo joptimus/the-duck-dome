@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { agentMeta, allAgentTypes } from "../../constants/agents";
+import { agentStore } from "../../stores/agentStore";
 
 function formatUptime(startedAt) {
   if (!startedAt) return "";
@@ -183,6 +184,9 @@ export function AgentsPanel({
                 agentColor={meta.color}
                 expanded={expandedPermsIdx === index}
                 onToggleExpand={() => setExpandedPermsIdx((prev) => (prev === index ? null : index))}
+                onToggleTool={(agentKey, toolKey) => void agentStore.toggleTool(agentKey, toolKey)}
+                onSetAutoApprove={(agentKey, policy) => void agentStore.setAutoApprove(agentKey, policy)}
+                onSetMaxLoops={(agentKey, value) => void agentStore.setMaxLoops(agentKey, value)}
               />
 
               {!agent.running ? (

@@ -41,6 +41,18 @@ class ToolApprovalService:
         source: str | None = None
         approval: ToolApproval | None = None
 
+    def _get_policy_with_fallback(
+        self,
+        *,
+        agent: str,
+        tool: str,
+        fallback_tool: str | None = None,
+    ) -> str | None:
+        policy = self._store.get_policy(agent, tool)
+        if policy is None and fallback_tool and fallback_tool != tool:
+            policy = self._store.get_policy(agent, fallback_tool)
+        return policy
+
     def request(
         self,
         *,
@@ -63,7 +75,11 @@ class ToolApprovalService:
             if decision.auto_approved:
                 return self.RequestResult(status="approved", source="permissions")
 
-        policy = self._store.get_policy(agent, normalized_tool)
+        policy = self._get_policy_with_fallback(
+            agent=agent,
+            tool=normalized_tool,
+            fallback_tool=tool,
+        )
         if policy == "allow":
             return self.RequestResult(status="approved", source="policy")
         if policy == "deny":

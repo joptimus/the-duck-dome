@@ -64,7 +64,14 @@ class LoopGuard:
         count = self._hops.get(channel_id, 0) + 1
         self._hops[channel_id] = count
 
-        max_hops = self._max_hops_provider(channel_id) if self._max_hops_provider else self.max_hops
+        max_hops = self.max_hops
+        if self._max_hops_provider is not None:
+            try:
+                provided = int(self._max_hops_provider(channel_id))
+                if provided >= 1:
+                    max_hops = provided
+            except (TypeError, ValueError):
+                max_hops = self.max_hops
         if count > max_hops:
             self._paused[channel_id] = True
             return GuardResult(should_route=False, just_triggered=True, hop_count=count)

@@ -80,10 +80,32 @@ class AgentPermissionStore:
 
     def set(self, agent: str, payload: dict) -> dict:
         with self._lock:
+            tools = payload.get("tools", {})
+            normalized_tools = {}
+            if isinstance(tools, dict):
+                for key, enabled in tools.items():
+                    if isinstance(key, str):
+                        normalized_tools[key] = bool(enabled)
+
+            auto_approve = str(
+                payload.get("autoApprove", AutoApprovePolicy.NONE.value)
+            ).lower()
+            if auto_approve not in {
+                AutoApprovePolicy.NONE.value,
+                AutoApprovePolicy.TOOL.value,
+                AutoApprovePolicy.ALL.value,
+            }:
+                auto_approve = AutoApprovePolicy.NONE.value
+
+            try:
+                max_loops = max(1, min(100, int(payload.get("maxLoops", 25))))
+            except (TypeError, ValueError):
+                max_loops = 25
+
             self._data[agent] = {
-                "tools": dict(payload.get("tools", {})),
-                "autoApprove": str(payload.get("autoApprove", AutoApprovePolicy.NONE.value)),
-                "maxLoops": int(payload.get("maxLoops", 25)),
+                "tools": normalized_tools,
+                "autoApprove": auto_approve,
+                "maxLoops": max_loops,
             }
             self._save()
             return self.get(agent) or {}

@@ -405,6 +405,7 @@ export default function ChannelShell() {
   const [createOpen, setCreateOpen] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const activeChannelIdRef = useRef(null);
+  const agentsRef = useRef([]);
 
   // New UI state
   const [activePanel, setActivePanel] = useState(null);
@@ -412,14 +413,18 @@ export default function ChannelShell() {
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
 
   useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
+
+  useEffect(() => {
     configureAgentStore({
-      getAgents: () => agents,
+      getAgents: () => agentsRef.current,
       setAgents,
       setError: setAgentError,
     });
 
     return () => configureAgentStore(null);
-  }, [agents, setAgents]);
+  }, [setAgents]);
 
   const fetchRepos = useCallback(async () => {
     try {
