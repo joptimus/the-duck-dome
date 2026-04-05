@@ -24,7 +24,7 @@ def test_request_approval_appears_in_pending(client: TestClient):
     items = pending.json()
     assert len(items) == 1
     assert items[0]["id"] == approval_id
-    assert items[0]["tool"] == "exec_command"
+    assert items[0]["tool"] == "bash"
 
 
 def test_approve_changes_status_and_clears_pending(client: TestClient):
@@ -161,19 +161,19 @@ def test_list_and_clear_policies(client: TestClient):
 
     policies = client.get("/api/tool_approvals/policies")
     assert policies.status_code == 200
-    assert policies.json().get("codex", {}).get("exec_command") == "allow"
+    assert policies.json().get("codex", {}).get("bash") == "allow"
 
     cleared = client.request(
         "DELETE",
         "/api/tool_approvals/policies",
-        json={"agent": "codex", "tool": "exec_command"},
+        json={"agent": "codex", "tool": "bash"},
     )
     assert cleared.status_code == 200
     assert cleared.json()["removed"] == 1
 
     policies_after = client.get("/api/tool_approvals/policies")
     assert policies_after.status_code == 200
-    assert policies_after.json().get("codex", {}).get("exec_command") is None
+    assert policies_after.json().get("codex", {}).get("bash") is None
 
 
 def test_websocket_broadcasts_on_request_and_resolve(app):

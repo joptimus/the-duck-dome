@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from duckdome.models.message import Delivery, DeliveryState, Message, MessageType
 from duckdome.stores.message_store import MessageStore
@@ -33,12 +33,17 @@ class LoopGuard:
     - Self-mentions are filtered (agent cannot route to itself), matching legacy.
     """
 
-    def __init__(self, max_hops: int = 4) -> None:
+    def __init__(
+        self,
+        max_hops: int = 4,
+        max_hops_provider: Callable[[str], int] | None = None,
+    ) -> None:
         if max_hops < 1:
             raise ValueError("max_hops must be >= 1")
         self._hops: dict[str, int] = {}  # channel_id -> hop count
         self._paused: dict[str, bool] = {}  # channel_id -> paused
         self.max_hops = max_hops
+        self._max_hops_provider = max_hops_provider
 
     def check(self, channel_id: str, sender: str, known_agents: list[str]) -> GuardResult:
         """Check if routing should proceed for this message.
@@ -59,7 +64,15 @@ class LoopGuard:
         count = self._hops.get(channel_id, 0) + 1
         self._hops[channel_id] = count
 
-        if count > self.max_hops:
+        max_hops = self.max_hops
+        if self._max_hops_provider is not None:
+            try:
+                provided = int(self._max_hops_provider(channel_id))
+                if provided >= 1:
+                    max_hops = provided
+            except (TypeError, ValueError):
+                max_hops = self.max_hops
+        if count > max_hops:
             self._paused[channel_id] = True
             return GuardResult(should_route=False, just_triggered=True, hop_count=count)
 
@@ -85,14 +98,15 @@ class MessageService:
         channel_service: object | None = None,
         trigger_service: object | None = None,
         ws_manager: ConnectionManager | None = None,
-        max_hops: int = 4,
+        max_hops: int = 25,
+        max_hops_provider: Callable[[str], int] | None = None,
     ) -> None:
         self._store = store
         self._known_agents = [a.lower() for a in known_agents]
         self._channel_service = channel_service
         self._trigger_service = trigger_service
         self._ws_manager = ws_manager
-        self._loop_guard = LoopGuard(max_hops=max_hops)
+        self._loop_guard = LoopGuard(max_hops=max_hops, max_hops_provider=max_hops_provider)
         self._build_mention_regex()
 
     def _broadcast(self, event: dict) -> None:

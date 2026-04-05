@@ -1,5 +1,6 @@
 import { useState, useMemo } from "react";
 import { agentMeta, allAgentTypes } from "../../constants/agents";
+import { agentStore } from "../../stores/agentStore";
 
 function formatUptime(startedAt) {
   if (!startedAt) return "";
@@ -23,6 +24,7 @@ import {
   TrashIcon,
   UsersIcon,
 } from "../icons";
+import { AgentPermissions } from "./AgentPermissions";
 import { Dot } from "../primitives/Dot";
 import styles from "./AgentsPanel.module.css";
 
@@ -37,6 +39,7 @@ export function AgentsPanel({
   onAddAgent,
 }) {
   const [editingPrompt, setEditingPrompt] = useState(null);
+  const [expandedPermsIdx, setExpandedPermsIdx] = useState(null);
   const [draftPrompts, setDraftPrompts] = useState({});
   const [adding, setAdding] = useState(false);
   const [newAgent, setNewAgent] = useState({ type: "", prompt: "" });
@@ -175,6 +178,17 @@ export function AgentsPanel({
                 )}
               </div>
 
+              <AgentPermissions
+                agent={agent.agent}
+                permissions={agent.permissions}
+                agentColor={meta.color}
+                expanded={expandedPermsIdx === index}
+                onToggleExpand={() => setExpandedPermsIdx((prev) => (prev === index ? null : index))}
+                onToggleTool={(agentKey, toolKey) => void agentStore.toggleTool(agentKey, toolKey)}
+                onSetAutoApprove={(agentKey, policy) => void agentStore.setAutoApprove(agentKey, policy)}
+                onSetMaxLoops={(agentKey, value) => void agentStore.setMaxLoops(agentKey, value)}
+              />
+
               {!agent.running ? (
                 <div className={styles.removeRow}>
                   <button type="button" className={styles.removeBtn} onClick={() => onRemoveAgent?.(agent)}>
@@ -269,4 +283,3 @@ export function AgentsPanel({
     </div>
   );
 }
-

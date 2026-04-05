@@ -36,6 +36,8 @@ import { ActivityPanel, AgentsPanel, JobsPanel, RulesPanel, SettingsPanel } from
 import { SessionLauncher } from "../../components/modals/SessionLauncher";
 import { ScheduleModal } from "../../components/modals/ScheduleModal";
 import CreateChannelModal from "../../components/modals/CreateChannelModal";
+import { configureAgentStore } from "../../stores/agentStore";
+import { normalizeAgentPermissions } from "../../types/permissions";
 
 const PINNED_MESSAGES_STORAGE_KEY = "duckdome.pinnedMessages";
 const SETTINGS_KEY = "duckdome:settings";
@@ -115,6 +117,7 @@ function normalizeAgents(data, channelId) {
       : null,
     pid: agent.pid || null,
     started_at: agent.started_at || null,
+    permissions: normalizeAgentPermissions(agent.permissions),
   }));
 }
 
@@ -402,11 +405,26 @@ export default function ChannelShell() {
   const [createOpen, setCreateOpen] = useState(false);
   const [wsConnected, setWsConnected] = useState(false);
   const activeChannelIdRef = useRef(null);
+  const agentsRef = useRef([]);
 
   // New UI state
   const [activePanel, setActivePanel] = useState(null);
   const [sessionLauncherOpen, setSessionLauncherOpen] = useState(false);
   const [scheduleModalOpen, setScheduleModalOpen] = useState(false);
+
+  useEffect(() => {
+    agentsRef.current = agents;
+  }, [agents]);
+
+  useEffect(() => {
+    configureAgentStore({
+      getAgents: () => agentsRef.current,
+      setAgents,
+      setError: setAgentError,
+    });
+
+    return () => configureAgentStore(null);
+  }, [setAgents]);
 
   const fetchRepos = useCallback(async () => {
     try {
@@ -794,6 +812,7 @@ export default function ChannelShell() {
         prompt: a.prompt || "",
         pid: a.pid || null,
         started_at: a.started_at || null,
+        permissions: normalizeAgentPermissions(a.permissions),
       })),
     [mergedAgents],
   );

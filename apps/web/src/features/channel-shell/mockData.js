@@ -1,4 +1,5 @@
 import { AgentPresence, ChannelType } from "./types";
+import { getDefaultAgentPermissions } from "../../types/permissions";
 
 export const mockChannels = [
   { id: "ch-general", name: "general", type: ChannelType.GENERAL, unread_count: 0 },
@@ -23,6 +24,7 @@ export const mockAgentsByChannelId = {
       status: AgentPresence.IDLE,
       last_heartbeat: now(),
       open_trigger_count: 0,
+      permissions: getDefaultAgentPermissions(),
     },
     {
       id: "ch-general:codex",
@@ -34,6 +36,7 @@ export const mockAgentsByChannelId = {
       last_heartbeat: now(),
       last_response_time: now(),
       open_trigger_count: 1,
+      permissions: getDefaultAgentPermissions(),
     },
     {
       id: "ch-general:gemini",
@@ -44,6 +47,7 @@ export const mockAgentsByChannelId = {
       last_heartbeat: "--",
       last_error: "Runner unavailable",
       open_trigger_count: 0,
+      permissions: getDefaultAgentPermissions(),
     },
   ],
   "ch-duckdome": [
@@ -57,6 +61,7 @@ export const mockAgentsByChannelId = {
       last_heartbeat: now(),
       last_response_time: now(),
       open_trigger_count: 2,
+      permissions: getDefaultAgentPermissions(),
     },
     {
       id: "ch-duckdome:codex",
@@ -67,6 +72,7 @@ export const mockAgentsByChannelId = {
       last_heartbeat: now(),
       last_response_time: now(),
       open_trigger_count: 1,
+      permissions: getDefaultAgentPermissions(),
     },
     {
       id: "ch-duckdome:gemini",
@@ -77,6 +83,7 @@ export const mockAgentsByChannelId = {
       last_heartbeat: now(),
       last_response_time: now(),
       open_trigger_count: 0,
+      permissions: getDefaultAgentPermissions(),
     },
   ],
 };

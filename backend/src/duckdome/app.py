@@ -19,7 +19,9 @@ from duckdome.routes import repos as repos_mod
 from duckdome.routes import websocket as websocket_mod
 from duckdome.routes import wrapper as wrapper_mod
 from duckdome.routes import settings as settings_mod
+from duckdome.routes import agent_permissions as agent_permissions_mod
 from duckdome.bridges import hooks_router
+from duckdome.services.agent_permission_service import AgentPermissionService
 from duckdome.services.wrapper_service import WrapperService
 from duckdome.services.channel_service import ChannelService
 from duckdome.services.job_service import JobService
@@ -30,6 +32,7 @@ from duckdome.services.runner_service import RunnerService
 from duckdome.services.rule_service import RuleService
 from duckdome.services.tool_approval_service import ToolApprovalService
 from duckdome.stores.channel_store import ChannelStore
+from duckdome.stores.agent_permission_store import AgentPermissionStore
 from duckdome.stores.job_store import JobStore
 from duckdome.stores.repo_store import RepoStore
 from duckdome.stores.message_store import MessageStore
@@ -77,6 +80,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     # Stores
     message_store = MessageStore(data_dir=data_dir)
     channel_store = ChannelStore(data_dir=data_dir)
+    agent_permission_store = AgentPermissionStore(data_dir=data_dir)
     trigger_store = TriggerStore(data_dir=data_dir)
     tool_approval_store = ToolApprovalStore(data_dir=data_dir)
     rule_store = RuleStore(data_dir=data_dir)
@@ -89,6 +93,10 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
 
     # Services
     channel_service = ChannelService(store=channel_store)
+    agent_permission_service = AgentPermissionService(
+        store=agent_permission_store,
+        channel_store=channel_store,
+    )
     trigger_service = TriggerService(
         trigger_store=trigger_store,
         channel_store=channel_store,
@@ -100,10 +108,12 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
         channel_service=channel_service,
         trigger_service=trigger_service,
         ws_manager=ws_manager,
+        max_hops_provider=agent_permission_service.get_channel_max_loops,
     )
     trigger_service.set_message_service(message_service)
     tool_approval_service = ToolApprovalService(
         store=tool_approval_store,
+        permission_service=agent_permission_service,
         ws_manager=ws_manager,
     )
     rule_service = RuleService(store=rule_store)
@@ -135,6 +145,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     deliveries_mod.init(message_service)
     channels_mod.init(
         channel_service,
+        permission_service=agent_permission_service,
         wrapper_service=wrapper_service,
         message_store=message_store,
         ws_manager=ws_manager,
@@ -143,6 +154,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     runners_mod.init(runner_service)
     wrapper_mod.init(wrapper_service, channel_service=channel_service)
     tool_approvals_mod.init(tool_approval_service)
+    agent_permissions_mod.init(agent_permission_service)
     rules_mod.init(rule_service)
     jobs_mod.init(job_service)
     repos_mod.init(repo_service)
@@ -163,6 +175,7 @@ def create_app(data_dir: Path | None = None) -> FastAPI:
     app.include_router(runners_mod.router)
     app.include_router(wrapper_mod.router)
     app.include_router(tool_approvals_mod.router)
+    app.include_router(agent_permissions_mod.router)
     app.include_router(rules_mod.router)
     app.include_router(jobs_mod.router)
     app.include_router(repos_mod.router)
