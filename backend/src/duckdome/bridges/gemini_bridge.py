@@ -264,11 +264,49 @@ class GeminiBridge(AgentBridge):
             "outcome": {"outcome": "selected", "optionId": decision["optionId"]},
         }))
 
+    def _resolve_fs_path(self, raw: str) -> Path:
+        """Resolve and guard a path against the agent's cwd. Raises ValueError on escape."""
+        if not self._config or not self._config.cwd:
+            raise ValueError("Bridge has no cwd configured")
+        cwd = Path(self._config.cwd).resolve()
+        candidate = Path(raw)
+        if not candidate.is_absolute():
+            candidate = cwd / candidate
+        resolved = candidate.resolve()
+        try:
+            resolved.relative_to(cwd)
+        except ValueError:
+            raise ValueError(f"Path {raw!r} escapes cwd {cwd}")
+        return resolved
+
     async def _handle_fs_read(self, request_id: str, params: _JsonDict) -> None:
-        await self._write(_make_error_response(request_id, -32601, "fs/read_text_file not yet implemented"))
+        try:
+            path = self._resolve_fs_path(params.get("path", ""))
+            content = path.read_text(encoding="utf-8")
+            line = params.get("line")
+            limit = params.get("limit")
+            if line is not None or limit is not None:
+                lines = content.splitlines(keepends=True)
+                start = int(line) - 1 if line else 0
+                end = start + int(limit) if limit else len(lines)
+                content = "".join(lines[start:end])
+            await self._write(_make_response(request_id, {"content": content}))
+        except ValueError as e:
+            await self._write(_make_error_response(request_id, -32602, str(e)))
+        except (FileNotFoundError, PermissionError, OSError) as e:
+            await self._write(_make_error_response(request_id, -32000, f"fs read failed: {e}"))
 
     async def _handle_fs_write(self, request_id: str, params: _JsonDict) -> None:
-        await self._write(_make_error_response(request_id, -32601, "fs/write_text_file not yet implemented"))
+        try:
+            path = self._resolve_fs_path(params.get("path", ""))
+            content = params.get("content", "")
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+            await self._write(_make_response(request_id, {}))
+        except ValueError as e:
+            await self._write(_make_error_response(request_id, -32602, str(e)))
+        except (PermissionError, OSError) as e:
+            await self._write(_make_error_response(request_id, -32000, f"fs write failed: {e}"))
 
     def _handle_notification(self, method: str, params: _JsonDict) -> None:
         """Handle a JSON-RPC notification from gemini.

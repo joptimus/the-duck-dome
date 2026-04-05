@@ -843,3 +843,74 @@ class TestGeminiBridgeApproval:
             reply = next(m for m in sent if m.get("id") == "srv-2")
             assert reply["result"]["outcome"]["optionId"] == "reject_once"
         asyncio.run(_run())
+
+
+class TestGeminiBridgeFsProxy:
+    def test_fs_read_inside_cwd(self, tmp_path):
+        async def _run():
+            target = tmp_path / "hello.txt"
+            target.write_text("hi", encoding="utf-8")
+            bridge = _make_gemini_bridge()
+            bridge._config = AgentConfig(agent_type="gemini", channel_id="g", cwd=str(tmp_path))
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0", "id": "fs-1",
+                "method": "fs/read_text_file",
+                "params": {"sessionId": "s1", "path": str(target)},
+            })
+            reply = next(m for m in sent if m.get("id") == "fs-1")
+            assert reply["result"]["content"] == "hi"
+        asyncio.run(_run())
+
+    def test_fs_read_outside_cwd_rejected(self, tmp_path):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._config = AgentConfig(agent_type="gemini", channel_id="g", cwd=str(tmp_path))
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0", "id": "fs-2",
+                "method": "fs/read_text_file",
+                "params": {"sessionId": "s1", "path": "/etc/passwd"},
+            })
+            reply = next(m for m in sent if m.get("id") == "fs-2")
+            assert "error" in reply
+        asyncio.run(_run())
+
+    def test_fs_write_inside_cwd_creates_parent_dirs(self, tmp_path):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._config = AgentConfig(agent_type="gemini", channel_id="g", cwd=str(tmp_path))
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            target = tmp_path / "sub" / "out.txt"
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0", "id": "fs-3",
+                "method": "fs/write_text_file",
+                "params": {"sessionId": "s1", "path": str(target), "content": "body"},
+            })
+            assert target.read_text(encoding="utf-8") == "body"
+            reply = next(m for m in sent if m.get("id") == "fs-3")
+            assert "error" not in reply
+        asyncio.run(_run())
+
+    def test_fs_write_outside_cwd_rejected(self, tmp_path):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._config = AgentConfig(agent_type="gemini", channel_id="g", cwd=str(tmp_path))
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0", "id": "fs-4",
+                "method": "fs/write_text_file",
+                "params": {"sessionId": "s1", "path": "/tmp/escape.txt", "content": "x"},
+            })
+            reply = next(m for m in sent if m.get("id") == "fs-4")
+            assert "error" in reply
+        asyncio.run(_run())
