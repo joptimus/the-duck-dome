@@ -190,10 +190,26 @@ class ClaudeBridge(AgentBridge):
                 logger.debug("[%s] claude stderr: %s", self._agent_id, stderr[:500])
             return proc.returncode
 
-        returncode = await asyncio.to_thread(_run)
-
-        if returncode != 0:
-            logger.warning("[%s] claude --print exited with code %d", self._agent_id, returncode)
+        try:
+            returncode = await asyncio.to_thread(_run)
+            if returncode != 0:
+                logger.warning(
+                    "[%s] claude --print exited with code %d",
+                    self._agent_id,
+                    returncode,
+                )
+        finally:
+            # Always transition back to IDLE so the thinking strip clears
+            # even on crash, timeout, or non-zero exit. The Stop hook also
+            # emits IDLE for the normal path; duplicate transitions are
+            # harmless because the listener compares by status.
+            self._status = AgentStatus.IDLE
+            self._emit(self.STATUS_CHANGE, StatusChangeEvent(
+                agent_id=self._agent_id,
+                agent_type="claude",
+                channel_id=channel_id,
+                status=AgentStatus.IDLE,
+            ))
 
     async def interrupt(self) -> None:
         with self._proc_lock:
