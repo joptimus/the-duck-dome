@@ -423,6 +423,24 @@ class TestEmitErrorIsolation:
         ))
         assert results == ["ok"]
 
+    def test_gemini_failing_listener_does_not_block_others(self):
+        bridge = _make_gemini_bridge()
+        results = []
+
+        def bad(e): raise ValueError("boom")
+        def good(e): results.append("ok")
+
+        bridge.on(bridge.MESSAGE_DELTA, bad)
+        bridge.on(bridge.MESSAGE_DELTA, good)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "x"},
+            },
+        })
+        assert results == ["ok"]
+
 
 # ===========================================================================
 # Test: manager bridge routing
