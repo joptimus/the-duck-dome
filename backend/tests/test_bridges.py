@@ -552,3 +552,73 @@ class TestGeminiBridgeConstruction:
         bridge = _make_gemini_bridge()
         assert bridge._session_id is None
         assert bridge._status == AgentStatus.OFFLINE
+
+
+class TestGeminiBridgeTransport:
+    def test_response_resolves_pending_future(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            fut = asyncio.get_running_loop().create_future()
+            bridge._pending_requests["req-1"] = fut
+            await bridge._handle_message({"id": "req-1", "result": {"sessionId": "s1"}})
+            assert fut.done()
+            assert fut.result() == {"sessionId": "s1"}
+        asyncio.run(_run())
+
+    def test_error_response_raises(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            fut = asyncio.get_running_loop().create_future()
+            bridge._pending_requests["req-2"] = fut
+            await bridge._handle_message({"id": "req-2", "error": {"code": -32000, "message": "auth"}})
+            assert fut.done()
+            with pytest.raises(RuntimeError, match="JSON-RPC error"):
+                fut.result()
+        asyncio.run(_run())
+
+    def test_notification_dispatches_to_handler(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            calls = []
+            bridge._handle_notification = lambda m, p: calls.append((m, p))  # type: ignore
+            await bridge._handle_message({
+                "method": "session/update",
+                "params": {"sessionId": "s1", "update": {"sessionUpdate": "agent_message_chunk"}},
+            })
+            assert calls == [("session/update", {"sessionId": "s1", "update": {"sessionUpdate": "agent_message_chunk"}})]
+        asyncio.run(_run())
+
+    def test_server_request_routes_to_handler(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            calls = []
+            async def capture(msg):
+                calls.append(msg)
+            bridge._handle_server_request = capture  # type: ignore
+            await bridge._handle_message({
+                "jsonrpc": "2.0",
+                "id": "srv-1",
+                "method": "fs/read_text_file",
+                "params": {"path": "/tmp/x"},
+            })
+            assert len(calls) == 1
+            assert calls[0]["method"] == "fs/read_text_file"
+        asyncio.run(_run())
+
+    def test_fail_pending_futures_rejects_all(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            loop = asyncio.get_running_loop()
+            req_fut = loop.create_future()
+            app_fut = loop.create_future()
+            bridge._pending_requests["r1"] = req_fut
+            bridge._pending_approvals["a1"] = app_fut
+            bridge._fail_pending_futures("stopping")
+            assert bridge._pending_requests == {}
+            assert bridge._pending_approvals == {}
+            assert req_fut.done() and app_fut.done()
+            with pytest.raises(RuntimeError, match="stopping"):
+                req_fut.result()
+            with pytest.raises(RuntimeError, match="stopping"):
+                app_fut.result()
+        asyncio.run(_run())

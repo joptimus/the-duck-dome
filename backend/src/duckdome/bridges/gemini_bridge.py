@@ -111,3 +111,114 @@ class GeminiBridge(AgentBridge):
 
     async def get_status(self) -> AgentStatus:
         return self._status
+
+    # ------------------------------------------------------------------
+    # JSON-RPC transport
+    # ------------------------------------------------------------------
+
+    async def _write(self, msg: _JsonDict) -> None:
+        if not self._proc or not self._proc.stdin:
+            raise RuntimeError("Gemini process not running")
+        line = json.dumps(msg) + "\n"
+        async with self._write_lock:
+            await asyncio.to_thread(self._proc.stdin.write, line)
+            await asyncio.to_thread(self._proc.stdin.flush)
+
+    async def _request(
+        self, method: str, params: _JsonDict, timeout: float = 30.0,
+    ) -> _JsonDict:
+        request_id = str(uuid.uuid4())
+        fut: asyncio.Future[_JsonDict] = asyncio.get_running_loop().create_future()
+        self._pending_requests[request_id] = fut
+        await self._write(_make_request(method, params, request_id))
+        try:
+            return await asyncio.wait_for(fut, timeout=timeout)
+        except asyncio.TimeoutError:
+            self._pending_requests.pop(request_id, None)
+            raise RuntimeError(f"Gemini request {method} timed out after {timeout}s")
+
+    async def _notify(self, method: str, params: _JsonDict | None = None) -> None:
+        await self._write(_make_notification(method, params))
+
+    async def _read_loop(self) -> None:
+        """Background task that reads JSON-RPC messages from gemini's stdout."""
+        try:
+            while self._proc and self._proc.stdout:
+                line = await asyncio.to_thread(self._proc.stdout.readline)
+                if not line:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    msg = json.loads(line)
+                except json.JSONDecodeError:
+                    logger.warning("Non-JSON from gemini stdout: %s", line[:200])
+                    continue
+                await self._handle_message(msg)
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            logger.exception("Gemini read loop crashed")
+        finally:
+            self._fail_pending_futures("Gemini process exited")
+            if self._status != AgentStatus.OFFLINE:
+                self._status = AgentStatus.OFFLINE
+                if self._config:
+                    self._emit(self.STATUS_CHANGE, StatusChangeEvent(
+                        agent_id=self._agent_id,
+                        agent_type="gemini",
+                        channel_id=self._config.channel_id,
+                        status=AgentStatus.OFFLINE,
+                    ))
+
+    async def _handle_message(self, msg: _JsonDict) -> None:
+        # Response to our request (has id, no method)
+        if "id" in msg and "method" not in msg:
+            request_id = msg["id"]
+            fut = self._pending_requests.pop(request_id, None)
+            if fut and not fut.done():
+                if "error" in msg:
+                    fut.set_exception(RuntimeError(
+                        f"Gemini JSON-RPC error: {msg['error']}"
+                    ))
+                else:
+                    fut.set_result(msg.get("result", {}))
+            return
+
+        # Server request (has id and method — needs our response)
+        if "id" in msg and "method" in msg:
+            await self._handle_server_request(msg)
+            return
+
+        # Notification (has method, no id)
+        if "method" in msg and "id" not in msg:
+            self._handle_notification(msg["method"], msg.get("params", {}))
+            return
+
+    async def _handle_server_request(self, msg: _JsonDict) -> None:
+        """Handle an incoming JSON-RPC request from gemini (approvals, fs proxy).
+
+        Filled in by Task 4 (approvals) and Task 5 (fs proxy).
+        """
+        request_id = msg["id"]
+        logger.warning("Unhandled Gemini server request: %s", msg.get("method"))
+        await self._write(_make_error_response(request_id, -32601, "Method not implemented"))
+
+    def _handle_notification(self, method: str, params: _JsonDict) -> None:
+        """Handle a JSON-RPC notification from gemini.
+
+        Filled in by Task 3.
+        """
+        logger.debug("Unhandled Gemini notification: %s", method)
+
+    def _fail_pending_futures(self, reason: str) -> None:
+        err = RuntimeError(reason)
+        for fut in self._pending_requests.values():
+            if not fut.done():
+                fut.set_exception(err)
+        self._pending_requests.clear()
+        for fut in self._pending_approvals.values():
+            if not fut.done():
+                fut.set_exception(err)
+        self._pending_approvals.clear()
