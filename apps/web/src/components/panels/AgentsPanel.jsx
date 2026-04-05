@@ -23,6 +23,7 @@ import {
   TrashIcon,
   UsersIcon,
 } from "../icons";
+import { AgentPermissions } from "./AgentPermissions";
 import { Dot } from "../primitives/Dot";
 import styles from "./AgentsPanel.module.css";
 
@@ -37,6 +38,7 @@ export function AgentsPanel({
   onAddAgent,
 }) {
   const [editingPrompt, setEditingPrompt] = useState(null);
+  const [expandedPermsIdx, setExpandedPermsIdx] = useState(null);
   const [draftPrompts, setDraftPrompts] = useState({});
   const [adding, setAdding] = useState(false);
   const [newAgent, setNewAgent] = useState({ type: "", prompt: "" });
@@ -175,6 +177,14 @@ export function AgentsPanel({
                 )}
               </div>
 
+              <AgentPermissions
+                agent={agent.agent}
+                permissions={agent.permissions}
+                agentColor={meta.color}
+                expanded={expandedPermsIdx === index}
+                onToggleExpand={() => setExpandedPermsIdx((prev) => (prev === index ? null : index))}
+              />
+
               {!agent.running ? (
                 <div className={styles.removeRow}>
                   <button type="button" className={styles.removeBtn} onClick={() => onRemoveAgent?.(agent)}>
@@ -269,4 +279,3 @@ export function AgentsPanel({
     </div>
   );
 }
-

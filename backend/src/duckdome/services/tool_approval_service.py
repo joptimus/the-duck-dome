@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Callable
 
 from duckdome.models.tool_approval import ToolApproval, ToolApprovalStatus
+from duckdome.services.agent_permission_service import AgentPermissionService
 from duckdome.stores.tool_approval_store import ToolApprovalStore
 from duckdome.ws.events import TOOL_APPROVAL_UPDATED
 
@@ -16,9 +17,11 @@ class ToolApprovalService:
     def __init__(
         self,
         store: ToolApprovalStore,
+        permission_service: AgentPermissionService | None = None,
         ws_manager: ConnectionManager | None = None,
     ) -> None:
         self._store = store
+        self._permission_service = permission_service
         self._ws_manager = ws_manager
         self._runtime_resolvers: dict[str, Callable[[str, str | None], None]] = {}
 
@@ -46,7 +49,21 @@ class ToolApprovalService:
         arguments: dict | None,
         channel: str,
     ) -> RequestResult:
-        policy = self._store.get_policy(agent, tool)
+        normalized_tool = tool
+        if self._permission_service is not None:
+            decision = self._permission_service.evaluate_tool_use(
+                agent=agent,
+                runtime_tool_name=tool,
+                tool_input=arguments,
+            )
+            if not decision.allowed:
+                return self.RequestResult(status="denied", source="permissions")
+            if decision.permission_key:
+                normalized_tool = decision.permission_key
+            if decision.auto_approved:
+                return self.RequestResult(status="approved", source="permissions")
+
+        policy = self._store.get_policy(agent, normalized_tool)
         if policy == "allow":
             return self.RequestResult(status="approved", source="policy")
         if policy == "deny":
@@ -54,7 +71,7 @@ class ToolApprovalService:
 
         approval = ToolApproval(
             agent=agent,
-            tool=tool,
+            tool=normalized_tool,
             arguments=arguments or {},
             channel=channel,
         )

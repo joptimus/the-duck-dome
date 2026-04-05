@@ -266,3 +266,22 @@ export async function removeRepoSource(path) {
     body: JSON.stringify({ path }),
   });
 }
+
+export async function updateAgentPermissions(agentKey, permissions, fallbackPermissions = permissions) {
+  try {
+    const result = await request(`/api/agents/${encodeURIComponent(agentKey)}/permissions`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        agent: agentKey,
+        permissions,
+      }),
+    });
+    return result?.permissions ?? result ?? permissions;
+  } catch (error) {
+    if (error?.isNetworkError || error?.status === 404 || error?.status >= 500) {
+      return fallbackPermissions;
+    }
+    throw error;
+  }
+}

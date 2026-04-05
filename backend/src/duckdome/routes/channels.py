@@ -6,6 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from duckdome.services.channel_service import ChannelService
+from duckdome.services.agent_permission_service import AgentPermissionService
 from duckdome.services.wrapper_service import WrapperService
 from duckdome.stores.message_store import MessageStore
 from duckdome.ws.events import CHANNEL_DELETED
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
 router = APIRouter(prefix="/api/channels", tags=["channels"])
 
 _service: ChannelService | None = None
+_permission_service: AgentPermissionService | None = None
 _wrapper_service: WrapperService | None = None
 _message_store: MessageStore | None = None
 _ws: ConnectionManager | None = None
@@ -23,12 +25,14 @@ _ws: ConnectionManager | None = None
 
 def init(
     service: ChannelService,
+    permission_service: AgentPermissionService | None = None,
     wrapper_service: WrapperService | None = None,
     message_store: MessageStore | None = None,
     ws_manager: ConnectionManager | None = None,
 ) -> None:
-    global _service, _wrapper_service, _message_store, _ws
+    global _service, _permission_service, _wrapper_service, _message_store, _ws
     _service = service
+    _permission_service = permission_service
     _wrapper_service = wrapper_service
     _message_store = message_store
     _ws = ws_manager
@@ -103,6 +107,8 @@ def list_agents(channel_id: str):
     result = []
     for a in agents:
         data = a.model_dump()
+        if _permission_service:
+            data["permissions"] = _permission_service.get_agent_permissions(a.agent_type).model_dump(mode="json")
         if _wrapper_service:
             details = _wrapper_service.get_agent_details(a.agent_type, channel_id=channel_id)
             if details:
