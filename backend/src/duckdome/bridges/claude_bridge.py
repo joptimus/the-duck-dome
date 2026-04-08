@@ -56,6 +56,12 @@ class ClaudeBridge(AgentBridge):
         self._settings_path: Path | None = None
         self._pending_approvals: dict[str, tuple[threading.Event, _JsonDict]] = {}
         self._pre_tool_use_handler: PreToolUseHandler | None = None
+        # One persistent Claude session ID per bridge instance (= per agent,
+        # per channel). Passed as --session-id on every `claude --print` so
+        # each turn continues the same conversation instead of starting a new
+        # one. Two channels in the same repo get two independent UUIDs,
+        # matching the "two separate CLI instances" model.
+        self._claude_session_id: str = str(uuid.uuid4())
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -80,7 +86,12 @@ class ClaudeBridge(AgentBridge):
         # Register hook handler for tool call events
         register_hook_handler(agent_id, self._handle_hook)
 
-        logger.info("Claude bridge %s ready (--print mode), hooks at %s", agent_id, settings_path)
+        logger.info(
+            "Claude bridge %s ready (--print mode), session_id=%s hooks=%s",
+            agent_id,
+            self._claude_session_id,
+            settings_path,
+        )
 
         self._status = AgentStatus.IDLE
         self._emit(self.STATUS_CHANGE, StatusChangeEvent(
@@ -131,7 +142,12 @@ class ClaudeBridge(AgentBridge):
         if claude_bin is None:
             raise FileNotFoundError("claude binary not found on PATH")
 
-        cmd = [claude_bin, "--print", text]
+        cmd = [
+            claude_bin,
+            "--print",
+            "--session-id", self._claude_session_id,
+            text,
+        ]
 
         if self._settings_path:
             cmd.extend(["--settings", str(self._settings_path)])
@@ -174,10 +190,26 @@ class ClaudeBridge(AgentBridge):
                 logger.debug("[%s] claude stderr: %s", self._agent_id, stderr[:500])
             return proc.returncode
 
-        returncode = await asyncio.to_thread(_run)
-
-        if returncode != 0:
-            logger.warning("[%s] claude --print exited with code %d", self._agent_id, returncode)
+        try:
+            returncode = await asyncio.to_thread(_run)
+            if returncode != 0:
+                logger.warning(
+                    "[%s] claude --print exited with code %d",
+                    self._agent_id,
+                    returncode,
+                )
+        finally:
+            # Always transition back to IDLE so the thinking strip clears
+            # even on crash, timeout, or non-zero exit. The Stop hook also
+            # emits IDLE for the normal path; duplicate transitions are
+            # harmless because the listener compares by status.
+            self._status = AgentStatus.IDLE
+            self._emit(self.STATUS_CHANGE, StatusChangeEvent(
+                agent_id=self._agent_id,
+                agent_type="claude",
+                channel_id=channel_id,
+                status=AgentStatus.IDLE,
+            ))
 
     async def interrupt(self) -> None:
         with self._proc_lock:

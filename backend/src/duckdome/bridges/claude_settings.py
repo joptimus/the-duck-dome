@@ -34,7 +34,36 @@ def generate_claude_hook_settings(
             hook["async"] = True
         return [{"hooks": [hook]}]
 
+    # Tools that are safe-by-default and should not require per-call approval.
+    # Without this allowlist every Claude turn triggers PermissionRequest for
+    # TodoWrite / Read / Grep / the DuckDome MCP chat tools — and since
+    # chat_send is how Claude replies in a channel, Claude cannot respond at
+    # all unless the user clicks approve on every single message.
+    # Dangerous tools (Bash, Edit, Write, WebFetch, …) are intentionally NOT
+    # listed here and still go through the approval flow.
+    safe_tools = [
+        # Claude Code built-ins that are read-only or sandbox-safe
+        "TodoWrite",
+        "Read",
+        "Grep",
+        "Glob",
+        "LS",
+        # DuckDome MCP tools — required for the agent to participate in a
+        # channel at all (read history, send replies, join, list channels).
+        "mcp__duckdome__chat_join",
+        "mcp__duckdome__chat_read",
+        "mcp__duckdome__chat_send",
+        "mcp__duckdome__chat_channels",
+        "mcp__duckdome__chat_rules",
+        "mcp__duckdome__identity",
+    ]
+
     settings = {
+        "permissions": {
+            "allow": safe_tools,
+            "ask": [],
+            "deny": [],
+        },
         "hooks": {
             # Sync — DuckDome can approve/block/modify
             "PreToolUse": _hook(),
