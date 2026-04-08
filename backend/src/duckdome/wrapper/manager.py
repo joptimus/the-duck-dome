@@ -27,6 +27,7 @@ from urllib.request import Request, urlopen
 from duckdome.bridges.base import AgentBridge, AgentConfig
 from duckdome.bridges.codex_bridge import CodexBridge
 from duckdome.bridges.claude_bridge import ClaudeBridge
+from duckdome.bridges.gemini_bridge import GeminiBridge
 from duckdome.bridges.events import (
     AgentMessageDeltaEvent,
     AgentMessageEvent,
@@ -399,13 +400,15 @@ class AgentProcessManager:
     @staticmethod
     def _use_bridge(agent_type: str) -> bool:
         """Return True if this agent type should use the new bridge path."""
-        return agent_type in ("codex", "claude")
+        return agent_type in ("codex", "claude", "gemini")
 
     def _create_bridge(self, agent_type: str, channel_id: str) -> AgentBridge:
         if agent_type == "codex":
             return CodexBridge()
         if agent_type == "claude":
             return ClaudeBridge(receiver_port=self._app_port)
+        if agent_type == "gemini":
+            return GeminiBridge()
         raise ValueError(f"No bridge for agent type: {agent_type}")
 
     def _connect_bridge_events(self, bridge: AgentBridge, key: str) -> None:

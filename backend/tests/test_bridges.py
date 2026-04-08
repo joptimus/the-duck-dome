@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from duckdome.bridges.base import AgentBridge, AgentConfig
 from duckdome.bridges.codex_bridge import CodexBridge
 from duckdome.bridges.claude_bridge import ClaudeBridge
+from duckdome.bridges.gemini_bridge import GeminiBridge
 from duckdome.bridges.claude_hook_receiver import (
     register_hook_handler,
     unregister_hook_handler,
@@ -422,6 +423,24 @@ class TestEmitErrorIsolation:
         ))
         assert results == ["ok"]
 
+    def test_gemini_failing_listener_does_not_block_others(self):
+        bridge = _make_gemini_bridge()
+        results = []
+
+        def bad(e): raise ValueError("boom")
+        def good(e): results.append("ok")
+
+        bridge.on(bridge.MESSAGE_DELTA, bad)
+        bridge.on(bridge.MESSAGE_DELTA, good)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "x"},
+            },
+        })
+        assert results == ["ok"]
+
 
 # ===========================================================================
 # Test: manager bridge routing
@@ -434,8 +453,8 @@ class TestManagerBridgeRouting:
     def test_use_bridge_claude(self):
         assert AgentProcessManager._use_bridge("claude") is True
 
-    def test_use_bridge_gemini_legacy(self):
-        assert AgentProcessManager._use_bridge("gemini") is False
+    def test_use_bridge_gemini(self):
+        assert AgentProcessManager._use_bridge("gemini") is True
 
     def test_create_bridge_codex(self, tmp_path):
         mgr = AgentProcessManager(data_dir=tmp_path)
@@ -447,10 +466,15 @@ class TestManagerBridgeRouting:
         bridge = mgr._create_bridge("claude", "general")
         assert isinstance(bridge, ClaudeBridge)
 
+    def test_create_bridge_gemini(self, tmp_path):
+        mgr = AgentProcessManager(data_dir=tmp_path)
+        bridge = mgr._create_bridge("gemini", "general")
+        assert isinstance(bridge, GeminiBridge)
+
     def test_create_bridge_unknown_raises(self, tmp_path):
         mgr = AgentProcessManager(data_dir=tmp_path)
         with pytest.raises(ValueError, match="No bridge"):
-            mgr._create_bridge("gemini", "general")
+            mgr._create_bridge("nonexistent", "general")
 
     def test_connect_bridge_events_wires_status(self, tmp_path):
         mgr = AgentProcessManager(data_dir=tmp_path)
@@ -527,3 +551,450 @@ class TestManagerBridgeRouting:
         assert "you were mentioned" in trigger_text
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["send_prompt"]
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["stop"]
+
+
+# ===========================================================================
+# Test: GeminiBridge construction
+# ===========================================================================
+
+def _make_gemini_bridge() -> GeminiBridge:
+    bridge = GeminiBridge()
+    bridge._agent_id = "gemini--test"
+    bridge._config = AgentConfig(agent_type="gemini", channel_id="general", cwd="/tmp")
+    return bridge
+
+
+class TestGeminiBridgeConstruction:
+    def test_is_agent_bridge(self):
+        bridge = _make_gemini_bridge()
+        assert isinstance(bridge, AgentBridge)
+
+    def test_initial_state(self):
+        bridge = _make_gemini_bridge()
+        assert bridge._session_id is None
+        assert bridge._status == AgentStatus.OFFLINE
+
+
+class TestGeminiBridgeTransport:
+    def test_response_resolves_pending_future(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            fut = asyncio.get_running_loop().create_future()
+            bridge._pending_requests["req-1"] = fut
+            await bridge._handle_message({"id": "req-1", "result": {"sessionId": "s1"}})
+            assert fut.done()
+            assert fut.result() == {"sessionId": "s1"}
+        asyncio.run(_run())
+
+    def test_error_response_raises(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            fut = asyncio.get_running_loop().create_future()
+            bridge._pending_requests["req-2"] = fut
+            await bridge._handle_message({"id": "req-2", "error": {"code": -32000, "message": "auth"}})
+            assert fut.done()
+            with pytest.raises(RuntimeError, match="JSON-RPC error"):
+                fut.result()
+        asyncio.run(_run())
+
+    def test_notification_dispatches_to_handler(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            calls = []
+            bridge._handle_notification = lambda m, p: calls.append((m, p))  # type: ignore
+            await bridge._handle_message({
+                "method": "session/update",
+                "params": {"sessionId": "s1", "update": {"sessionUpdate": "agent_message_chunk"}},
+            })
+            assert calls == [("session/update", {"sessionId": "s1", "update": {"sessionUpdate": "agent_message_chunk"}})]
+        asyncio.run(_run())
+
+    def test_server_request_routes_to_handler(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            calls = []
+            async def capture(msg):
+                calls.append(msg)
+            bridge._handle_server_request = capture  # type: ignore
+            await bridge._handle_message({
+                "jsonrpc": "2.0",
+                "id": "srv-1",
+                "method": "fs/read_text_file",
+                "params": {"path": "/tmp/x"},
+            })
+            assert len(calls) == 1
+            assert calls[0]["method"] == "fs/read_text_file"
+        asyncio.run(_run())
+
+    def test_fail_pending_futures_rejects_all(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            loop = asyncio.get_running_loop()
+            req_fut = loop.create_future()
+            app_fut = loop.create_future()
+            bridge._pending_requests["r1"] = req_fut
+            bridge._pending_approvals["a1"] = app_fut
+            bridge._fail_pending_futures("stopping")
+            assert bridge._pending_requests == {}
+            assert bridge._pending_approvals == {}
+            assert req_fut.done() and app_fut.done()
+            with pytest.raises(RuntimeError, match="stopping"):
+                req_fut.result()
+            with pytest.raises(RuntimeError, match="stopping"):
+                app_fut.result()
+        asyncio.run(_run())
+
+
+class TestGeminiBridgeNotifications:
+    def test_agent_message_chunk_emits_delta(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.MESSAGE_DELTA)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "text", "text": "hello"},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].delta == "hello"
+        assert events[0].agent_type == "gemini"
+
+    def test_agent_thought_chunk_emits_delta(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.MESSAGE_DELTA)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_thought_chunk",
+                "content": {"type": "text", "text": "thinking..."},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].delta == "thinking..."
+
+    def test_agent_message_chunk_without_text_ignored(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.MESSAGE_DELTA)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "agent_message_chunk",
+                "content": {"type": "image", "data": "..."},
+            },
+        })
+        assert events == []
+
+    def test_tool_call_emits_tool_call_event(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_CALL)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc1",
+                "title": "run shell",
+                "kind": "execute",
+                "status": "pending",
+                "rawInput": {"command": "ls"},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].call_id == "tc1"
+        assert events[0].tool_name == "run shell"
+        assert events[0].tool_input == {"command": "ls"}
+        assert events[0].agent_type == "gemini"
+
+    def test_tool_call_without_title_falls_back_to_kind(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_CALL)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call",
+                "toolCallId": "tc2",
+                "kind": "read",
+                "rawInput": {},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].tool_name == "read"
+
+    def test_tool_call_update_completed_emits_result(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_RESULT)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc1",
+                "status": "completed",
+                "rawOutput": {"stdout": "hello"},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].call_id == "tc1"
+        assert events[0].success is True
+        assert "hello" in events[0].output
+
+    def test_tool_call_update_failed_emits_failed_result(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_RESULT)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc1",
+                "status": "failed",
+                "rawOutput": {"error": "boom"},
+            },
+        })
+        assert len(events) == 1
+        assert events[0].success is False
+        assert "boom" in events[0].output
+
+    def test_tool_call_update_in_progress_ignored(self):
+        bridge = _make_gemini_bridge()
+        events = _collect(bridge, bridge.TOOL_RESULT)
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {
+                "sessionUpdate": "tool_call_update",
+                "toolCallId": "tc1",
+                "status": "in_progress",
+            },
+        })
+        assert events == []
+
+    def test_available_commands_update_ignored(self):
+        bridge = _make_gemini_bridge()
+        all_events = []
+        for et in (bridge.MESSAGE, bridge.MESSAGE_DELTA, bridge.TOOL_CALL, bridge.TOOL_RESULT):
+            bridge.on(et, lambda e, _et=et: all_events.append((_et, e)))
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {"sessionUpdate": "available_commands_update", "availableCommands": []},
+        })
+        assert all_events == []
+
+    def test_unknown_top_level_method_does_not_crash(self):
+        bridge = _make_gemini_bridge()
+        # Should just log, not raise
+        bridge._handle_notification("some/unknown/method", {})
+
+    def test_unknown_session_update_kind_does_not_crash(self):
+        bridge = _make_gemini_bridge()
+        bridge._handle_notification("session/update", {
+            "sessionId": "s1",
+            "update": {"sessionUpdate": "future_unknown_kind", "foo": "bar"},
+        })
+
+
+class TestGeminiBridgeApproval:
+    def test_request_permission_emits_approval_event(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            events = _collect(bridge, bridge.APPROVAL_REQUEST)
+
+            async def approve_soon():
+                while not bridge._pending_approvals:
+                    await asyncio.sleep(0.01)
+                approval_id = next(iter(bridge._pending_approvals))
+                await bridge.approve(approval_id)
+            asyncio.create_task(approve_soon())
+
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0",
+                "id": "srv-1",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "s1",
+                    "toolCall": {
+                        "toolCallId": "tc1",
+                        "title": "run shell",
+                        "rawInput": {"command": "rm -rf /"},
+                    },
+                    "options": [
+                        {"optionId": "allow_once", "name": "Allow once", "kind": "allow_once"},
+                        {"optionId": "reject_once", "name": "Reject", "kind": "reject_once"},
+                    ],
+                },
+            })
+
+            assert len(events) == 1
+            assert events[0].approval_id == "tc1"
+            assert events[0].tool_name == "run shell"
+            assert any(
+                m.get("id") == "srv-1" and m.get("result", {}).get("outcome", {}).get("outcome") == "selected"
+                for m in sent
+            )
+        asyncio.run(_run())
+
+    def test_deny_selects_reject_option(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+
+            async def deny_soon():
+                while not bridge._pending_approvals:
+                    await asyncio.sleep(0.01)
+                approval_id = next(iter(bridge._pending_approvals))
+                await bridge.deny(approval_id, "nope")
+            asyncio.create_task(deny_soon())
+
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0",
+                "id": "srv-2",
+                "method": "session/request_permission",
+                "params": {
+                    "sessionId": "s1",
+                    "toolCall": {"toolCallId": "tc2", "title": "bad", "rawInput": {}},
+                    "options": [
+                        {"optionId": "allow_once", "name": "Allow", "kind": "allow_once"},
+                        {"optionId": "reject_once", "name": "Reject", "kind": "reject_once"},
+                    ],
+                },
+            })
+
+            reply = next(m for m in sent if m.get("id") == "srv-2")
+            assert reply["result"]["outcome"]["optionId"] == "reject_once"
+        asyncio.run(_run())
+
+
+class TestGeminiBridgeFsProxy:
+    def test_fs_read_inside_cwd(self, tmp_path):
+        async def _run():
+            target = tmp_path / "hello.txt"
+            target.write_text("hi", encoding="utf-8")
+            bridge = _make_gemini_bridge()
+            bridge._config = AgentConfig(agent_type="gemini", channel_id="g", cwd=str(tmp_path))
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0", "id": "fs-1",
+                "method": "fs/read_text_file",
+                "params": {"sessionId": "s1", "path": str(target)},
+            })
+            reply = next(m for m in sent if m.get("id") == "fs-1")
+            assert reply["result"]["content"] == "hi"
+        asyncio.run(_run())
+
+    def test_fs_read_outside_cwd_rejected(self, tmp_path):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._config = AgentConfig(agent_type="gemini", channel_id="g", cwd=str(tmp_path))
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0", "id": "fs-2",
+                "method": "fs/read_text_file",
+                "params": {"sessionId": "s1", "path": "/etc/passwd"},
+            })
+            reply = next(m for m in sent if m.get("id") == "fs-2")
+            assert "error" in reply
+        asyncio.run(_run())
+
+    def test_fs_write_inside_cwd_creates_parent_dirs(self, tmp_path):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._config = AgentConfig(agent_type="gemini", channel_id="g", cwd=str(tmp_path))
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            target = tmp_path / "sub" / "out.txt"
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0", "id": "fs-3",
+                "method": "fs/write_text_file",
+                "params": {"sessionId": "s1", "path": str(target), "content": "body"},
+            })
+            assert target.read_text(encoding="utf-8") == "body"
+            reply = next(m for m in sent if m.get("id") == "fs-3")
+            assert "error" not in reply
+        asyncio.run(_run())
+
+    def test_fs_write_outside_cwd_rejected(self, tmp_path):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._config = AgentConfig(agent_type="gemini", channel_id="g", cwd=str(tmp_path))
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            await bridge._handle_server_request({
+                "jsonrpc": "2.0", "id": "fs-4",
+                "method": "fs/write_text_file",
+                "params": {"sessionId": "s1", "path": "/tmp/escape.txt", "content": "x"},
+            })
+            reply = next(m for m in sent if m.get("id") == "fs-4")
+            assert "error" in reply
+        asyncio.run(_run())
+
+
+class TestGeminiBridgeLifecycle:
+    def test_send_prompt_dispatches_session_prompt(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._session_id = "sess-1"
+            bridge._status = AgentStatus.IDLE
+            calls = []
+            async def fake_request(method, params, timeout=30.0):
+                calls.append((method, params))
+                return {}
+            bridge._request = fake_request  # type: ignore
+
+            await bridge.send_prompt("do the thing", "general", "human")
+
+            assert len(calls) == 1
+            method, params = calls[0]
+            assert method == "session/prompt"
+            assert params["sessionId"] == "sess-1"
+            assert any(
+                isinstance(b, dict) and b.get("type") == "text" and "do the thing" in b.get("text", "")
+                for b in params.get("prompt", [])
+            )
+        asyncio.run(_run())
+
+    def test_send_prompt_without_session_raises(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            with pytest.raises(RuntimeError, match="session"):
+                await bridge.send_prompt("x", "ch", "s")
+        asyncio.run(_run())
+
+    def test_interrupt_sends_session_cancel_notification(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            bridge._session_id = "sess-2"
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            await bridge.interrupt()
+            assert len(sent) == 1
+            assert sent[0]["method"] == "session/cancel"
+            assert sent[0]["params"] == {"sessionId": "sess-2"}
+            assert "id" not in sent[0]
+        asyncio.run(_run())
+
+    def test_interrupt_without_session_is_noop(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            sent = []
+            async def fake_write(m): sent.append(m)
+            bridge._write = fake_write  # type: ignore
+            await bridge.interrupt()
+            assert sent == []
+        asyncio.run(_run())
+
+    def test_stop_is_idempotent_without_proc(self):
+        async def _run():
+            bridge = _make_gemini_bridge()
+            await bridge.stop()
+            assert bridge._status == AgentStatus.OFFLINE
+        asyncio.run(_run())
