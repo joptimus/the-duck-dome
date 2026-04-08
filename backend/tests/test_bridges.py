@@ -280,6 +280,82 @@ class TestClaudeBridgeHooks:
         with pytest.raises(FileNotFoundError, match="Claude MCP config not found"):
             asyncio.run(bridge.send_prompt("hello", "general", "system"))
 
+    def test_send_prompt_uses_session_id_and_returns_idle(self, monkeypatch):
+        bridge = _make_claude_bridge()
+        bridge._claude_session_id = "session-123"
+        events = _collect(bridge, bridge.STATUS_CHANGE)
+        popen_calls = []
+
+        class _FakeProc:
+            def __init__(self, cmd, **kwargs):
+                popen_calls.append((cmd, kwargs))
+                self.returncode = 0
+
+            def communicate(self):
+                return ("ok", "")
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -1
+
+        monkeypatch.setattr("duckdome.bridges.claude_bridge.shutil.which", lambda _: "/usr/bin/claude")
+        monkeypatch.setattr("duckdome.bridges.claude_bridge.subprocess.Popen", _FakeProc)
+
+        asyncio.run(bridge.send_prompt("hello", "general", "system"))
+
+        assert len(popen_calls) == 1
+        cmd, kwargs = popen_calls[0]
+        assert cmd[:4] == ["/usr/bin/claude", "--print", "--session-id", "session-123"]
+        assert cmd[4] == "hello"
+        assert kwargs["cwd"] == "/tmp"
+        assert events[0].status == AgentStatus.WORKING
+        assert events[-1].status == AgentStatus.IDLE
+        assert bridge._status == AgentStatus.IDLE
+
+    def test_send_prompt_is_serialized_per_bridge(self, monkeypatch):
+        bridge = _make_claude_bridge()
+        state = {
+            "active": 0,
+            "max_active": 0,
+            "lock": threading.Lock(),
+        }
+
+        class _FakeProc:
+            def __init__(self, cmd, **kwargs):
+                self.returncode = 0
+
+            def communicate(self):
+                import time
+
+                with state["lock"]:
+                    state["active"] += 1
+                    state["max_active"] = max(state["max_active"], state["active"])
+                time.sleep(0.05)
+                with state["lock"]:
+                    state["active"] -= 1
+                return ("ok", "")
+
+            def poll(self):
+                return self.returncode
+
+            def terminate(self):
+                self.returncode = -1
+
+        monkeypatch.setattr("duckdome.bridges.claude_bridge.shutil.which", lambda _: "/usr/bin/claude")
+        monkeypatch.setattr("duckdome.bridges.claude_bridge.subprocess.Popen", _FakeProc)
+
+        async def _run() -> None:
+            await asyncio.gather(
+                bridge.send_prompt("first", "general", "system"),
+                bridge.send_prompt("second", "general", "system"),
+            )
+
+        asyncio.run(_run())
+
+        assert state["max_active"] == 1
+
     def test_pre_tool_use_emits_tool_call(self):
         bridge = _make_claude_bridge()
         events = _collect(bridge, bridge.TOOL_CALL)
@@ -518,12 +594,8 @@ class TestManagerBridgeRouting:
 
         assert fake_bridge.started is True
         assert fake_bridge.stopped is True
-        # 2 prompts: startup prompt (sent at bridge start) + trigger prompt
-        assert len(fake_bridge.sent_prompts) == 2
-        startup_text, _startup_channel, startup_sender = fake_bridge.sent_prompts[0]
-        assert "#room-1" in startup_text
-        assert startup_sender == "system"
-        trigger_text = fake_bridge.sent_prompts[1][0]
+        assert len(fake_bridge.sent_prompts) == 1
+        trigger_text = fake_bridge.sent_prompts[0][0]
         assert "you were mentioned" in trigger_text
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["send_prompt"]
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["stop"]

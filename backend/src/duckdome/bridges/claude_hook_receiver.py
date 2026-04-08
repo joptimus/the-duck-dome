@@ -6,6 +6,7 @@ registry keyed by agent_id (passed as a query parameter).
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, Callable
 
@@ -59,7 +60,7 @@ async def receive_claude_hook(
     logger.debug("Hook %s from agent %s", hook_event, agent)
 
     try:
-        response = handler(hook_event, body)
+        response = await asyncio.to_thread(handler, hook_event, body)
     except Exception:
         logger.exception("Hook handler error for agent %s event %s", agent, hook_event)
         response = {}

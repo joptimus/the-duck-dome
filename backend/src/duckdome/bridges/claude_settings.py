@@ -34,7 +34,26 @@ def generate_claude_hook_settings(
             hook["async"] = True
         return [{"hooks": [hook]}]
 
+    safe_tools = [
+        "TodoWrite",
+        "Read",
+        "Grep",
+        "Glob",
+        "LS",
+        "mcp__duckdome__chat_join",
+        "mcp__duckdome__chat_read",
+        "mcp__duckdome__chat_send",
+        "mcp__duckdome__chat_channels",
+        "mcp__duckdome__chat_rules",
+        "mcp__duckdome__identity",
+    ]
+
     settings = {
+        "permissions": {
+            "allow": safe_tools,
+            "ask": [],
+            "deny": [],
+        },
         "hooks": {
             # Sync — DuckDome can approve/block/modify
             "PreToolUse": _hook(),

@@ -3,49 +3,37 @@ from threading import Thread
 from duckdome.wrapper.manager import (
     AgentProcess,
     AgentProcessManager,
-    _build_startup_prompt,
     _build_trigger_prompt,
     _resolve_inject_delay,
     _should_use_proxy,
 )
 
 
-def test_build_trigger_prompt_is_minimal():
+def test_build_trigger_prompt_includes_channel_and_identity():
     prompt = _build_trigger_prompt(
         agent_type="codex",
         channel="ch-123",
         sender="human",
         text="Please inspect the failing test and patch it.",
     )
-    assert "you were mentioned, take appropriate action" in prompt
-    # channel/join instructions now live in the startup prompt, not here
+    assert "codex agent" in prompt
+    assert "#ch-123" in prompt
+    assert 'chat_read(channel="ch-123", sender="codex")' in prompt
+    assert 'chat_send(channel="ch-123", sender="codex", text="...")' in prompt
     assert "chat_join" not in prompt
+    assert "human" in prompt
 
 
-def test_build_trigger_prompt_same_for_all_agents():
+def test_build_trigger_prompt_varies_by_agent_identity():
     claude_prompt = _build_trigger_prompt(
         agent_type="claude", channel="general", sender="human", text="hi"
     )
     codex_prompt = _build_trigger_prompt(
         agent_type="codex", channel="general", sender="human", text="hi"
     )
-    assert claude_prompt == codex_prompt
-
-
-def test_build_startup_prompt_includes_channel_and_identity():
-    prompt = _build_startup_prompt(agent_type="claude", channel="general")
-    assert "claude" in prompt
-    assert "#general" in prompt
-    assert "chat_read" in prompt
-    assert "chat_send" in prompt
-    assert 'sender="claude"' in prompt
-
-
-def test_build_startup_prompt_codex():
-    prompt = _build_startup_prompt(agent_type="codex", channel="backend")
-    assert "codex" in prompt
-    assert "#backend" in prompt
-    assert 'sender="codex"' in prompt
+    assert 'sender="claude"' in claude_prompt
+    assert 'sender="codex"' in codex_prompt
+    assert claude_prompt != codex_prompt
 
 
 class _FakeProxy:

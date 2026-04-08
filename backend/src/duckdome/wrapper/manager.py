@@ -184,27 +184,24 @@ HEARTBEAT_INTERVAL = 5.0  # seconds
 INJECT_DELAY = 0.01  # seconds between keystrokes
 
 
-def _build_startup_prompt(*, agent_type: str, channel: str) -> str:
-    """Build the one-time startup prompt sent when a bridge agent becomes ready.
+def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: str) -> str:
+    """Build the task prompt when an agent is mentioned.
 
-    Establishes the agent's identity and channel context so trigger prompts
-    can be kept minimal.
+    This replaces the legacy wrapper-triggered MCP read flow from agentchattr.
+    Differences from legacy behavior: instead of injecting a literal
+    ``mcp read #channel`` command into a persistent TUI, bridge agents get a
+    direct prompt telling them which channel to read and which sender identity
+    to use in DuckDome MCP tool calls.
     """
     return (
         f'You are the {agent_type} agent for the #{channel} channel in DuckDome. '
-        f'Use chat_read to read messages and chat_send to reply. '
-        f'Always pass sender="{agent_type}" in your tool calls. '
-        f'You can @mention other agents to involve them in tasks.'
+        f'You were mentioned by {sender}. '
+        f'Use chat_read(channel="{channel}", sender="{agent_type}") to read the '
+        f'channel, then reply with chat_send(channel="{channel}", '
+        f'sender="{agent_type}", text="..."). '
+        f'If needed, you can @mention other agents to involve them in tasks. '
+        f'Take appropriate action on the latest relevant message.'
     )
-
-
-def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: str) -> str:
-    """Build the injected task prompt when an agent is mentioned.
-
-    The agent already knows its channel and identity from the startup prompt,
-    so this just needs to wake it up.
-    """
-    return "you were mentioned, take appropriate action"
 
 
 def _open_agent_terminal(tmux_session: str) -> None:
@@ -724,11 +721,6 @@ class AgentProcessManager:
                 self._trigger_service.register_agent(bound_channel, agent_type)
             except Exception:
                 logger.exception("[%s] failed to register agent in channel %s", key, bound_channel)
-
-        # Send startup prompt — fires once the bridge is ready (ClaudeBridge waits
-        # for SessionStart; CodexBridge is ready immediately after start())
-        startup = _build_startup_prompt(agent_type=agent_type, channel=bound_channel)
-        self._submit_bridge_coro(bridge.send_prompt(startup, bound_channel, "system"))
 
         logger.info("[%s] started via bridge", key)
         return True
