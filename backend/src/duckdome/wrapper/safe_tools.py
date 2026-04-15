@@ -2,10 +2,13 @@ from __future__ import annotations
 
 
 DUCKDOME_STARTUP_SAFE_TOOLS: tuple[str, ...] = (
+    "chat_channels",
+    "chat_claim",
     "chat_join",
     "chat_read",
     "chat_rules",
     "chat_send",
+    "chat_who",
 )
 
 

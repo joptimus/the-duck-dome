@@ -1085,9 +1085,26 @@ export default function ChannelShell() {
         const triggerResults = await Promise.allSettled(
           targets.map((agentType) => triggerAgent(agentType, "user", text, activeChannelId)),
         );
-        const anyFailed = triggerResults.some((r) => r.status === "rejected");
-        if (anyFailed) {
-          setMessagesError("One or more agents are not running");
+        const failedAgents = targets.filter((_, i) => triggerResults[i].status === "rejected");
+        if (failedAgents.length > 0) {
+          const agentList = failedAgents.join(", ");
+          const now = Date.now() / 1000;
+          const systemMsg = {
+            id: `system-agent-offline-${Date.now()}`,
+            sender: "System",
+            sender_type: "system",
+            type: "system",
+            text: `Agent${failedAgents.length > 1 ? "s" : ""} not running: ${agentList}`,
+            content: `Agent${failedAgents.length > 1 ? "s" : ""} not running: ${agentList}`,
+            channel: activeChannelId,
+            reply_to: null,
+            time: formatClockTime(now),
+            timestamp: now,
+          };
+          setMessagesByChannelId((prev) => {
+            const existing = prev[activeChannelId] || [];
+            return { ...prev, [activeChannelId]: decorateMessages([...existing, systemMsg]) };
+          });
         }
       })
       .catch((error) => {
@@ -1184,7 +1201,7 @@ export default function ChannelShell() {
         )}
         {messagesError && (
           <div style={{ padding: "4px 16px", color: "var(--warning)", fontSize: "var(--fs-label, 11px)" }}>
-            Message sync issue: {messagesError}
+            {messagesError}
           </div>
         )}
 

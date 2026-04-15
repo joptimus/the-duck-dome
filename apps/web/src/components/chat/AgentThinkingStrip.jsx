@@ -18,7 +18,11 @@ export function AgentThinkingStrip({ agents = [], failure }) {
             <Dot color={meta.color || 'var(--text-muted)'} size={6} pulse />
             <span className={styles.label}>
               <span style={{ color: meta.color, fontWeight: 700 }}>{meta.label || agent.agent_type}</span>
-              {' '}is working…
+              {' '}
+              {agent.current_task
+                ? <>is running <code>{agent.current_task}</code>…</>
+                : 'is working…'
+              }
             </span>
           </span>
         );
