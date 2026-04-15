@@ -57,11 +57,13 @@ class ClaudeBridge(AgentBridge):
         self._pending_approvals: dict[str, tuple[asyncio.Event, _JsonDict]] = {}
         self._pre_tool_use_handler: PreToolUseHandler | None = None
         # One persistent Claude session ID per bridge instance (= per agent,
-        # per channel). Passed as --session-id on every `claude --print` so
-        # each turn continues the same conversation instead of starting a new
-        # one. Two channels in the same repo get two independent UUIDs,
-        # matching the "two separate CLI instances" model.
+        # per channel). The first turn uses --session-id <uuid> to create the
+        # session; every subsequent turn uses --resume <uuid> to continue it.
+        # Using --session-id on a session that already exists causes
+        # "Session ID is already in use" (exit code 1), which is why we
+        # switch to --resume after the first successful turn.
         self._claude_session_id: str = str(uuid.uuid4())
+        self._claude_session_started: bool = False
         self._send_queue: asyncio.Queue[tuple[str, str, str]] = asyncio.Queue()
         self._queue_worker_task: asyncio.Task | None = None
         self._bridge_loop: asyncio.AbstractEventLoop | None = None
@@ -200,10 +202,15 @@ class ClaudeBridge(AgentBridge):
         if claude_bin is None:
             raise FileNotFoundError("claude binary not found on PATH")
 
+        if self._claude_session_started:
+            session_flags = ["--resume", self._claude_session_id]
+        else:
+            session_flags = ["--session-id", self._claude_session_id]
+
         cmd = [
             claude_bin,
             "--print",
-            "--session-id", self._claude_session_id,
+            *session_flags,
             text,
         ]
 
@@ -250,7 +257,11 @@ class ClaudeBridge(AgentBridge):
 
         try:
             returncode = await asyncio.to_thread(_run)
-            if returncode != 0:
+            if returncode == 0:
+                # Session was created (or resumed) successfully — switch to
+                # --resume for all future turns on this bridge instance.
+                self._claude_session_started = True
+            else:
                 logger.warning(
                     "[%s] claude --print exited with code %d",
                     self._agent_id,
