@@ -638,7 +638,8 @@ class TestManagerBridgeRouting:
         assert "#room-1" in startup_text
         assert startup_sender == "system"
         trigger_text = fake_bridge.sent_prompts[1][0]
-        assert "you were mentioned" in trigger_text
+        assert "human" in trigger_text
+        assert "inspect this" in trigger_text
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["send_prompt"]
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["stop"]
 

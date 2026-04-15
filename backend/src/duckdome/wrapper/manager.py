@@ -200,12 +200,16 @@ def _build_startup_prompt(*, agent_type: str, channel: str) -> str:
 
 
 def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: str) -> str:
-    """Build the injected task prompt when an agent is mentioned.
+    """Build the trigger prompt when an agent is mentioned.
 
-    The agent already knows its channel and identity from the startup prompt,
-    so this just needs to wake it up.
+    Includes the sender and message text so Claude has immediate context
+    without requiring a chat_read call just to know what was asked.
+    Claude should still call chat_read for full channel history when needed.
     """
-    return "you were mentioned, take appropriate action"
+    return (
+        f"{sender} says in #{channel}: {text!r}\n"
+        f"Use chat_read to get full channel history if needed, then reply with chat_send."
+    )
 
 
 def _open_agent_terminal(tmux_session: str) -> None:
