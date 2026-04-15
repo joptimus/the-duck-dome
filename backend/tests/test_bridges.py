@@ -377,6 +377,7 @@ class TestClaudeBridgeHooks:
 
     def test_permission_request_blocks_until_approved(self):
         bridge = _make_claude_bridge()
+        bridge._ensure_bridge_loop()
         events = _collect(bridge, bridge.APPROVAL_REQUEST)
         result_holder = []
 
@@ -400,12 +401,10 @@ class TestClaudeBridgeHooks:
         assert len(events) == 1
         approval_id = events[0].approval_id
 
-        # Approve it (sync since we're not in async context)
-        entry = bridge._pending_approvals.get(approval_id)
-        assert entry is not None
-        event_obj, decision = entry
-        decision["decision"] = "approve"
-        event_obj.set()
+        # Approve it via the bridge loop (asyncio.Event must be set from bridge loop)
+        loop = bridge._ensure_bridge_loop()
+        fut = asyncio.run_coroutine_threadsafe(bridge.approve(approval_id), loop)
+        fut.result(timeout=2)
 
         t.join(timeout=5)
         assert len(result_holder) == 1
@@ -415,6 +414,111 @@ class TestClaudeBridgeHooks:
         bridge = _make_claude_bridge()
         result = bridge._handle_hook("SomeUnknownHook", {})
         assert result == {}
+
+
+def test_permission_request_resolves_on_approve():
+    """approve() must resolve the pending hook and return approve decision."""
+    bridge = _make_claude_bridge()
+    # The bridge needs a running event loop for _ensure_bridge_loop()
+    # Start the bridge loop manually
+    bridge._ensure_bridge_loop()
+
+    results = []
+
+    def run_hook():
+        result = bridge._handle_hook(
+            "PermissionRequest",
+            {"tool_name": "bash", "tool_input": {"command": "ls"}},
+        )
+        results.append(result)
+
+    import threading
+    t = threading.Thread(target=run_hook)
+    t.start()
+
+    # Give the hook time to register
+    import time
+    time.sleep(0.1)
+
+    # Find the approval_id
+    approval_ids = list(bridge._pending_approvals.keys())
+    assert len(approval_ids) == 1
+
+    # Approve it via the bridge loop
+    loop = bridge._ensure_bridge_loop()
+    future = asyncio.run_coroutine_threadsafe(bridge.approve(approval_ids[0]), loop)
+    future.result(timeout=2)
+
+    t.join(timeout=2)
+    assert results == [{"decision": "approve"}]
+
+
+def test_permission_request_resolves_on_deny():
+    """deny() must resolve the pending hook and return block decision."""
+    bridge = _make_claude_bridge()
+    bridge._ensure_bridge_loop()
+
+    results = []
+
+    def run_hook():
+        result = bridge._handle_hook(
+            "PermissionRequest",
+            {"tool_name": "bash", "tool_input": {"command": "rm -rf /"}},
+        )
+        results.append(result)
+
+    import threading, time
+    t = threading.Thread(target=run_hook)
+    t.start()
+    time.sleep(0.1)
+
+    approval_ids = list(bridge._pending_approvals.keys())
+    loop = bridge._ensure_bridge_loop()
+    future = asyncio.run_coroutine_threadsafe(
+        bridge.deny(approval_ids[0], "Too dangerous"), loop
+    )
+    future.result(timeout=2)
+
+    t.join(timeout=2)
+    assert results == [{"decision": "block", "reason": "Too dangerous"}]
+
+
+def test_permission_request_does_not_block_thread():
+    """A second thread must be available while an approval is pending."""
+    import concurrent.futures
+    import time
+
+    bridge = _make_claude_bridge()
+    bridge._ensure_bridge_loop()
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    # Submit a hook call that will block waiting for approval
+    hook_future = executor.submit(
+        bridge._handle_hook,
+        "PermissionRequest",
+        {"tool_name": "bash", "tool_input": {"command": "ls"}},
+    )
+
+    # Give the hook time to register and start waiting
+    time.sleep(0.1)
+    assert not hook_future.done(), "hook should still be waiting for approval"
+
+    # The thread pool must still be able to serve a second request
+    other_future = executor.submit(lambda: "available")
+    assert other_future.result(timeout=1) == "available", "second thread should be free"
+
+    # Clean up — deny to unblock the hook thread
+    loop = bridge._ensure_bridge_loop()
+    approval_ids = list(bridge._pending_approvals.keys())
+    if approval_ids:
+        deny_future = asyncio.run_coroutine_threadsafe(
+            bridge.deny(approval_ids[0], "test cleanup"), loop
+        )
+        deny_future.result(timeout=2)
+
+    hook_future.result(timeout=2)
+    executor.shutdown(wait=False)
 
 
 # ===========================================================================

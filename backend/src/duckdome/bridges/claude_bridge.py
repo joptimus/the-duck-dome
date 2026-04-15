@@ -54,7 +54,7 @@ class ClaudeBridge(AgentBridge):
         self._proc_lock = threading.Lock()
         self._status = AgentStatus.OFFLINE
         self._settings_path: Path | None = None
-        self._pending_approvals: dict[str, tuple[threading.Event, _JsonDict]] = {}
+        self._pending_approvals: dict[str, tuple[asyncio.Event, _JsonDict]] = {}
         self._pre_tool_use_handler: PreToolUseHandler | None = None
         # One persistent Claude session ID per bridge instance (= per agent,
         # per channel). Passed as --session-id on every `claude --print` so
@@ -64,6 +64,29 @@ class ClaudeBridge(AgentBridge):
         self._claude_session_id: str = str(uuid.uuid4())
         self._send_queue: asyncio.Queue[tuple[str, str, str]] = asyncio.Queue()
         self._queue_worker_task: asyncio.Task | None = None
+        self._bridge_loop: asyncio.AbstractEventLoop | None = None
+        self._bridge_loop_thread: threading.Thread | None = None
+
+    # ------------------------------------------------------------------
+    # Bridge loop (dedicated thread for async approval waits)
+    # ------------------------------------------------------------------
+
+    def _ensure_bridge_loop(self) -> asyncio.AbstractEventLoop:
+        """Return the bridge's dedicated asyncio event loop, starting it if needed."""
+        if self._bridge_loop is not None and self._bridge_loop.is_running():
+            return self._bridge_loop
+
+        loop = asyncio.new_event_loop()
+        self._bridge_loop = loop
+
+        def _bridge_loop_worker() -> None:
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+
+        t = threading.Thread(target=_bridge_loop_worker, daemon=True, name="bridge-loop")
+        self._bridge_loop_thread = t
+        t.start()
+        return loop
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -116,11 +139,22 @@ class ClaudeBridge(AgentBridge):
 
         unregister_hook_handler(self._agent_id)
 
-        for approval_id, (event, decision) in self._pending_approvals.items():
+        loop = self._bridge_loop
+        for approval_id, (event, decision) in list(self._pending_approvals.items()):
             decision["decision"] = "block"
             decision["reason"] = "Bridge stopping"
-            event.set()
+            if loop is not None:
+                loop.call_soon_threadsafe(event.set)
+            else:
+                event.set()  # fallback if loop not started
         self._pending_approvals.clear()
+
+        if self._bridge_loop is not None:
+            self._bridge_loop.call_soon_threadsafe(self._bridge_loop.stop)
+            if self._bridge_loop_thread is not None:
+                self._bridge_loop_thread.join(timeout=2)
+            self._bridge_loop = None
+            self._bridge_loop_thread = None
 
         with self._proc_lock:
             proc = self._proc
@@ -413,25 +447,30 @@ class ClaudeBridge(AgentBridge):
         tool_input = payload.get("tool_input", {})
         approval_id = str(uuid.uuid4())
 
-        # Create a threading.Event so the hook handler can block until
-        # the user responds via approve()/deny().
-        event = threading.Event()
+        loop = self._ensure_bridge_loop()
         decision: _JsonDict = {}
-        self._pending_approvals[approval_id] = (event, decision)
 
-        self._emit(self.APPROVAL_REQUEST, ApprovalRequestEvent(
-            agent_id=self._agent_id,
-            agent_type="claude",
-            channel_id=channel_id,
-            approval_id=approval_id,
-            tool_name=tool_name,
-            tool_input=tool_input if isinstance(tool_input, dict) else {},
-            description=f"{tool_name} permission request",
-        ))
+        async def _register_and_wait() -> None:
+            async_event = asyncio.Event()
+            self._pending_approvals[approval_id] = (async_event, decision)
+            self._emit(self.APPROVAL_REQUEST, ApprovalRequestEvent(
+                agent_id=self._agent_id,
+                agent_type="claude",
+                channel_id=channel_id,
+                approval_id=approval_id,
+                tool_name=tool_name,
+                tool_input=tool_input if isinstance(tool_input, dict) else {},
+                description=f"{tool_name} permission request",
+            ))
+            try:
+                await asyncio.wait_for(async_event.wait(), timeout=600)
+            except asyncio.TimeoutError:
+                pass
+            finally:
+                self._pending_approvals.pop(approval_id, None)
 
-        # Block until approve/deny is called or timeout (10 min matches CLI default)
-        event.wait(timeout=600)
-        self._pending_approvals.pop(approval_id, None)
+        future = asyncio.run_coroutine_threadsafe(_register_and_wait(), loop)
+        future.result(timeout=610)  # blocks calling thread until approved/denied/timed out
 
         if decision.get("decision") == "approve":
             return {"decision": "approve"}
