@@ -20,6 +20,7 @@ from duckdome.bridges.claude_hook_receiver import (
     unregister_hook_handler,
 )
 from duckdome.bridges.claude_settings import generate_claude_hook_settings
+from duckdome.wrapper.safe_tools import claude_allowed_mcp_tools
 from duckdome.bridges.events import (
     AgentMessageEvent,
     AgentStatus,
@@ -466,6 +467,16 @@ class ClaudeBridge(AgentBridge):
     def _handle_permission_request(self, payload: _JsonDict, channel_id: str) -> _JsonDict:
         tool_name = payload.get("tool_name", "")
         tool_input = payload.get("tool_input", {})
+
+        # Fast-approve tools that are already in the settings.local.json allowlist.
+        # permissions.allow should prevent PermissionRequest from firing for these,
+        # but Claude Code may still fire it depending on settings merge order.
+        # This is a defence-in-depth check so safe tools never block on startup.
+        _safe = frozenset(claude_allowed_mcp_tools()) | {"TodoWrite", "Read", "Grep", "Glob", "LS"}
+        if tool_name in _safe:
+            logger.debug("[%s] PermissionRequest auto-approved for safe tool: %s", self._agent_id, tool_name)
+            return {"decision": "approve"}
+
         approval_id = str(uuid.uuid4())
 
         loop = self._ensure_bridge_loop()
