@@ -268,7 +268,25 @@ class TestCodexBridgeMessageClassification:
 # ===========================================================================
 
 class TestClaudeBridgeHooks:
-    def test_send_prompt_fails_fast_when_mcp_config_path_is_missing(self, monkeypatch):
+    def test_send_prompt_enqueues_when_mcp_config_path_is_missing(self, monkeypatch):
+        """send_prompt should enqueue without raising; the MCP config check
+        lives in _run_claude_process, not in send_prompt."""
+        bridge = _make_claude_bridge()
+        bridge._config = AgentConfig(
+            agent_type="claude",
+            channel_id="general",
+            cwd="/tmp",
+            extra={"mcp_config_path": "/tmp/does-not-exist-mcp-config.json"},
+        )
+        monkeypatch.setattr("duckdome.bridges.claude_bridge.shutil.which", lambda _: "/usr/bin/claude")
+
+        # send_prompt must not raise — it only enqueues.
+        asyncio.run(bridge.send_prompt("hello", "general", "system"))
+        assert bridge._send_queue.qsize() == 1
+
+    def test_run_claude_process_raises_when_mcp_config_path_is_missing(self, monkeypatch):
+        """The FileNotFoundError for a missing MCP config should surface in
+        _run_claude_process, not in send_prompt."""
         bridge = _make_claude_bridge()
         bridge._config = AgentConfig(
             agent_type="claude",
@@ -279,7 +297,7 @@ class TestClaudeBridgeHooks:
         monkeypatch.setattr("duckdome.bridges.claude_bridge.shutil.which", lambda _: "/usr/bin/claude")
 
         with pytest.raises(FileNotFoundError, match="Claude MCP config not found"):
-            asyncio.run(bridge.send_prompt("hello", "general", "system"))
+            asyncio.run(bridge._run_claude_process("hello", "general", "system"))
 
     def test_pre_tool_use_emits_tool_call(self):
         bridge = _make_claude_bridge()
@@ -397,6 +415,78 @@ class TestClaudeBridgeHooks:
         bridge = _make_claude_bridge()
         result = bridge._handle_hook("SomeUnknownHook", {})
         assert result == {}
+
+
+# ===========================================================================
+# Test: ClaudeBridge per-channel message queue
+# ===========================================================================
+
+def test_send_prompt_queue_processes_all_messages():
+    """All queued messages must be processed, none dropped."""
+    bridge = _make_claude_bridge()
+    processed = []
+
+    async def run():
+        async def fake_process(text, channel_id, sender):
+            processed.append(text)
+            await asyncio.sleep(0)
+
+        # Start the bridge loop so the queue worker can run
+        loop = asyncio.get_event_loop()
+        # Patch _run_claude_process to track calls
+        original = bridge._run_claude_process
+        bridge._run_claude_process = fake_process
+
+        # Start the queue worker manually (bridge.start() not called in unit tests)
+        worker_task = loop.create_task(bridge._queue_worker())
+
+        await bridge.send_prompt("msg1", "general", "alice")
+        await bridge.send_prompt("msg2", "general", "bob")
+        await bridge.send_prompt("msg3", "general", "carol")
+
+        # Wait for all items to be processed
+        await bridge._send_queue.join()
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+
+        bridge._run_claude_process = original
+
+    asyncio.run(run())
+    assert len(processed) == 3
+    assert set(processed) == {"msg1", "msg2", "msg3"}
+
+
+def test_send_prompt_processes_messages_in_order():
+    """Messages must be processed in arrival order."""
+    bridge = _make_claude_bridge()
+    order = []
+
+    async def run():
+        async def fake_process(text, channel_id, sender):
+            order.append(text)
+            await asyncio.sleep(0.01)
+
+        bridge._run_claude_process = fake_process
+
+        loop = asyncio.get_event_loop()
+        worker_task = loop.create_task(bridge._queue_worker())
+
+        await bridge.send_prompt("first", "general", "alice")
+        await bridge.send_prompt("second", "general", "bob")
+        await bridge.send_prompt("third", "general", "carol")
+
+        await bridge._send_queue.join()
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(run())
+    assert order == ["first", "second", "third"]
 
 
 # ===========================================================================

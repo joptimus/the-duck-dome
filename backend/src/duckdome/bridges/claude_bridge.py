@@ -62,6 +62,8 @@ class ClaudeBridge(AgentBridge):
         # one. Two channels in the same repo get two independent UUIDs,
         # matching the "two separate CLI instances" model.
         self._claude_session_id: str = str(uuid.uuid4())
+        self._send_queue: asyncio.Queue[tuple[str, str, str]] = asyncio.Queue()
+        self._queue_worker_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -101,7 +103,17 @@ class ClaudeBridge(AgentBridge):
             status=AgentStatus.IDLE,
         ))
 
+        self._queue_worker_task = asyncio.create_task(self._queue_worker())
+
     async def stop(self) -> None:
+        if self._queue_worker_task is not None:
+            self._queue_worker_task.cancel()
+            try:
+                await self._queue_worker_task
+            except asyncio.CancelledError:
+                pass
+            self._queue_worker_task = None
+
         unregister_hook_handler(self._agent_id)
 
         for approval_id, (event, decision) in self._pending_approvals.items():
@@ -134,10 +146,20 @@ class ClaudeBridge(AgentBridge):
     # ------------------------------------------------------------------
 
     async def send_prompt(self, text: str, channel_id: str, sender: str) -> None:
-        """Spawn `claude --print <text>` and wait for it to complete."""
+        """Enqueue a prompt for sequential processing.
+
+        Each ClaudeBridge has one queue. Messages are processed one at a time
+        in arrival order — same as typing multiple messages into the CLI.
+        """
         if self._config is None:
             raise RuntimeError("ClaudeBridge not started")
 
+        await self._send_queue.put((text, channel_id, sender))
+        logger.debug("[%s] queued prompt for channel=%s (queue size=%d)",
+                     self._agent_id, channel_id, self._send_queue.qsize())
+
+    async def _run_claude_process(self, text: str, channel_id: str, sender: str) -> None:
+        """Spawn `claude --print <text>` and wait for it to complete."""
         claude_bin = shutil.which("claude")
         if claude_bin is None:
             raise FileNotFoundError("claude binary not found on PATH")
@@ -210,6 +232,20 @@ class ClaudeBridge(AgentBridge):
                 channel_id=channel_id,
                 status=AgentStatus.IDLE,
             ))
+
+    async def _queue_worker(self) -> None:
+        """Process queued prompts one at a time until cancelled."""
+        while True:
+            try:
+                text, channel_id, sender = await self._send_queue.get()
+            except asyncio.CancelledError:
+                break
+            try:
+                await self._run_claude_process(text, channel_id, sender)
+            except Exception:
+                logger.exception("[%s] _run_claude_process failed", self._agent_id)
+            finally:
+                self._send_queue.task_done()
 
     async def interrupt(self) -> None:
         with self._proc_lock:
