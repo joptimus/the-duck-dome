@@ -10,6 +10,8 @@ import logging
 import tempfile
 from pathlib import Path
 
+from duckdome.wrapper.safe_tools import claude_allowed_mcp_tools
+
 logger = logging.getLogger(__name__)
 
 
@@ -48,14 +50,9 @@ def generate_claude_hook_settings(
         "Grep",
         "Glob",
         "LS",
-        # DuckDome MCP tools — required for the agent to participate in a
-        # channel at all (read history, send replies, join, list channels).
-        "mcp__duckdome__chat_join",
-        "mcp__duckdome__chat_read",
-        "mcp__duckdome__chat_send",
-        "mcp__duckdome__chat_channels",
-        "mcp__duckdome__chat_rules",
-        "mcp__duckdome__identity",
+        # DuckDome MCP tools — derived from safe_tools.py so this list
+        # stays in sync with the PreToolUse hook handler and providers.py.
+        *claude_allowed_mcp_tools(),
     ]
 
     settings = {
