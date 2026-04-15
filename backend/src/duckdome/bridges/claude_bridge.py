@@ -66,6 +66,7 @@ class ClaudeBridge(AgentBridge):
         self._queue_worker_task: asyncio.Task | None = None
         self._bridge_loop: asyncio.AbstractEventLoop | None = None
         self._bridge_loop_thread: threading.Thread | None = None
+        self._bridge_loop_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Bridge loop (dedicated thread for async approval waits)
@@ -73,20 +74,21 @@ class ClaudeBridge(AgentBridge):
 
     def _ensure_bridge_loop(self) -> asyncio.AbstractEventLoop:
         """Return the bridge's dedicated asyncio event loop, starting it if needed."""
-        if self._bridge_loop is not None and self._bridge_loop.is_running():
-            return self._bridge_loop
+        with self._bridge_loop_lock:
+            if self._bridge_loop is not None and self._bridge_loop.is_running():
+                return self._bridge_loop
 
-        loop = asyncio.new_event_loop()
-        self._bridge_loop = loop
+            loop = asyncio.new_event_loop()
+            self._bridge_loop = loop
 
-        def _bridge_loop_worker() -> None:
-            asyncio.set_event_loop(loop)
-            loop.run_forever()
+            def _bridge_loop_worker() -> None:
+                asyncio.set_event_loop(loop)
+                loop.run_forever()
 
-        t = threading.Thread(target=_bridge_loop_worker, daemon=True, name="bridge-loop")
-        self._bridge_loop_thread = t
-        t.start()
-        return loop
+            t = threading.Thread(target=_bridge_loop_worker, daemon=True, name="bridge-loop")
+            self._bridge_loop_thread = t
+            t.start()
+            return loop
 
     # ------------------------------------------------------------------
     # Lifecycle
@@ -140,7 +142,7 @@ class ClaudeBridge(AgentBridge):
         unregister_hook_handler(self._agent_id)
 
         loop = self._bridge_loop
-        for approval_id, (event, decision) in list(self._pending_approvals.items()):
+        for _approval_id, (event, decision) in list(self._pending_approvals.items()):
             decision["decision"] = "block"
             decision["reason"] = "Bridge stopping"
             if loop is not None:

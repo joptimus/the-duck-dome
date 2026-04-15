@@ -206,7 +206,7 @@ def test_legacy_compat_tools_are_registered(bridge):
 
 def test_token_identity_wins_over_mismatched_sender(bridge, stores, channel_id):
     """When a valid token is present, it overrides a mismatched sender param."""
-    message_store, channel_store, trigger_store = stores
+    _message_store, _channel_store, _trigger_store = stores
     tool_map = {t.name: t.fn for t in bridge.mcp._tool_manager.list_tools()}
     chat_send = tool_map["chat_send"]
 
@@ -225,7 +225,7 @@ def test_token_identity_wins_over_mismatched_sender(bridge, stores, channel_id):
 
 def test_token_identity_wins_over_mismatched_channel(bridge, stores, channel_id):
     """When a valid token is present, it overrides a mismatched channel param."""
-    message_store, channel_store, trigger_store = stores
+    _message_store, _channel_store, _trigger_store = stores
     tool_map = {t.name: t.fn for t in bridge.mcp._tool_manager.list_tools()}
     chat_send = tool_map["chat_send"]
 
