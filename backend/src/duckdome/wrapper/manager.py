@@ -355,6 +355,7 @@ class AgentProcess:
     presence_channel: str | None = None
     console_monitor: ConsoleMonitor | None = None
     key: str = ""  # compound key: "agent_type:channel_id"
+    duckdome_token: str = ""
 
 
 class AgentProcessManager:
@@ -807,6 +808,8 @@ class AgentProcessManager:
         # discovery flow, which would otherwise block startup with an
         # interactive auth prompt for a headless background process.
         token = generate_agent_token()
+        bound_channel = channel_id or "general"
+        agent_auth_store.register(token, channel=bound_channel, agent_type=agent_type)
         if agent_type == "gemini":
             mcp_config_path = generate_gemini_settings(
                 self._config_dir, agent_type, mcp_target_url, token
@@ -842,6 +845,7 @@ class AgentProcessManager:
             inject_delay=_resolve_inject_delay(agent_type),
             active_channel=channel_id or "general",
             key=self._agent_key(agent_type, channel_id),
+            duckdome_token=token,
         )
 
         def _run_one_popen_iteration() -> bool:
@@ -1037,6 +1041,8 @@ class AgentProcessManager:
                 agent_proc.proxy.stop()
             except Exception:
                 logger.exception("[%s] proxy shutdown error", agent_type)
+        if agent_proc.duckdome_token:
+            agent_auth_store.unregister(agent_proc.duckdome_token)
         self._deregister_agent_presence(agent_proc)
         return True
 

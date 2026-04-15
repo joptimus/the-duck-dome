@@ -296,7 +296,11 @@ class ClaudeBridge(AgentBridge):
         if entry:
             event, decision = entry
             decision["decision"] = "approve"
-            event.set()
+            loop = self._bridge_loop
+            if loop is not None:
+                loop.call_soon_threadsafe(event.set)
+            else:
+                event.set()  # fallback
 
     async def deny(self, approval_id: str, reason: str) -> None:
         entry = self._pending_approvals.get(approval_id)
@@ -304,7 +308,11 @@ class ClaudeBridge(AgentBridge):
             event, decision = entry
             decision["decision"] = "block"
             decision["reason"] = reason
-            event.set()
+            loop = self._bridge_loop
+            if loop is not None:
+                loop.call_soon_threadsafe(event.set)
+            else:
+                event.set()  # fallback
 
     # ------------------------------------------------------------------
     # Status

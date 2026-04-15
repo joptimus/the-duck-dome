@@ -6,6 +6,8 @@ import json
 
 import pytest
 
+from duckdome.mcp.auth import agent_auth_store, set_request_token, reset_request_token
+
 pytest.importorskip("mcp.server.fastmcp")
 
 from duckdome.mcp.bridge import McpBridge
@@ -200,3 +202,41 @@ def test_legacy_compat_tools_are_registered(bridge):
     assert "chat_claim" in tool_names
     assert "chat_who" in tool_names
     assert "chat_channels" in tool_names
+
+
+def test_token_identity_wins_over_mismatched_sender(bridge, stores, channel_id):
+    """When a valid token is present, it overrides a mismatched sender param."""
+    message_store, channel_store, trigger_store = stores
+    tool_map = {t.name: t.fn for t in bridge.mcp._tool_manager.list_tools()}
+    chat_send = tool_map["chat_send"]
+
+    token = "test-token-codex-identity"
+    agent_auth_store.register(token, channel=channel_id, agent_type="codex")
+    state = set_request_token(token)
+    try:
+        # sender says "claude" but token says "codex" — codex must win, no error
+        result = chat_send(text="hello from codex", channel=channel_id, sender="claude")
+        assert "Error" not in result
+        assert "Sent" in result
+    finally:
+        agent_auth_store.unregister(token)
+        reset_request_token(state)
+
+
+def test_token_identity_wins_over_mismatched_channel(bridge, stores, channel_id):
+    """When a valid token is present, it overrides a mismatched channel param."""
+    message_store, channel_store, trigger_store = stores
+    tool_map = {t.name: t.fn for t in bridge.mcp._tool_manager.list_tools()}
+    chat_send = tool_map["chat_send"]
+
+    token = "test-token-codex-channel"
+    agent_auth_store.register(token, channel=channel_id, agent_type="codex")
+    state = set_request_token(token)
+    try:
+        # channel says "other" but token says channel_id — token channel must win, no error
+        result = chat_send(text="hello", channel="other", sender="codex")
+        assert "Error" not in result
+        assert "Sent" in result
+    finally:
+        agent_auth_store.unregister(token)
+        reset_request_token(state)

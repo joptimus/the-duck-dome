@@ -124,15 +124,21 @@ class McpBridge:
         ) -> tuple[str | None, str | None]:
             bound = agent_auth_store.get(get_request_token())
             if bound is not None:
-                requested_channel = channel.strip()
+                # Token is ground truth. Log a warning if sender param disagrees but
+                # never reject — the token can't be wrong, the sender param can.
                 requested_sender = sender.strip().lower()
                 if requested_sender and requested_sender != bound.agent_type:
-                    return None, (
-                        f"Error: sender '{requested_sender}' does not match bound agent '{bound.agent_type}'."
+                    log.warning(
+                        "[bridge] sender param %r overridden by token identity %r",
+                        requested_sender,
+                        bound.agent_type,
                     )
+                requested_channel = channel.strip()
                 if requested_channel and requested_channel != bound.channel:
-                    return None, (
-                        f"Error: channel '{requested_channel}' does not match bound channel '{bound.channel}'."
+                    log.warning(
+                        "[bridge] channel param %r overridden by token channel %r",
+                        requested_channel,
+                        bound.channel,
                     )
                 return bound.agent_type, bound.channel
 
