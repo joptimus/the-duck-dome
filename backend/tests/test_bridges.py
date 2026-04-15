@@ -268,7 +268,25 @@ class TestCodexBridgeMessageClassification:
 # ===========================================================================
 
 class TestClaudeBridgeHooks:
-    def test_send_prompt_fails_fast_when_mcp_config_path_is_missing(self, monkeypatch):
+    def test_send_prompt_enqueues_when_mcp_config_path_is_missing(self, monkeypatch):
+        """send_prompt should enqueue without raising; the MCP config check
+        lives in _run_claude_process, not in send_prompt."""
+        bridge = _make_claude_bridge()
+        bridge._config = AgentConfig(
+            agent_type="claude",
+            channel_id="general",
+            cwd="/tmp",
+            extra={"mcp_config_path": "/tmp/does-not-exist-mcp-config.json"},
+        )
+        monkeypatch.setattr("duckdome.bridges.claude_bridge.shutil.which", lambda _: "/usr/bin/claude")
+
+        # send_prompt must not raise — it only enqueues.
+        asyncio.run(bridge.send_prompt("hello", "general", "system"))
+        assert bridge._send_queue.qsize() == 1
+
+    def test_run_claude_process_raises_when_mcp_config_path_is_missing(self, monkeypatch):
+        """The FileNotFoundError for a missing MCP config should surface in
+        _run_claude_process, not in send_prompt."""
         bridge = _make_claude_bridge()
         bridge._config = AgentConfig(
             agent_type="claude",
@@ -279,7 +297,7 @@ class TestClaudeBridgeHooks:
         monkeypatch.setattr("duckdome.bridges.claude_bridge.shutil.which", lambda _: "/usr/bin/claude")
 
         with pytest.raises(FileNotFoundError, match="Claude MCP config not found"):
-            asyncio.run(bridge.send_prompt("hello", "general", "system"))
+            asyncio.run(bridge._run_claude_process("hello", "general", "system"))
 
     def test_pre_tool_use_emits_tool_call(self):
         bridge = _make_claude_bridge()
@@ -359,6 +377,7 @@ class TestClaudeBridgeHooks:
 
     def test_permission_request_blocks_until_approved(self):
         bridge = _make_claude_bridge()
+        bridge._ensure_bridge_loop()
         events = _collect(bridge, bridge.APPROVAL_REQUEST)
         result_holder = []
 
@@ -382,12 +401,10 @@ class TestClaudeBridgeHooks:
         assert len(events) == 1
         approval_id = events[0].approval_id
 
-        # Approve it (sync since we're not in async context)
-        entry = bridge._pending_approvals.get(approval_id)
-        assert entry is not None
-        event_obj, decision = entry
-        decision["decision"] = "approve"
-        event_obj.set()
+        # Approve it via the bridge loop (asyncio.Event must be set from bridge loop)
+        loop = bridge._ensure_bridge_loop()
+        fut = asyncio.run_coroutine_threadsafe(bridge.approve(approval_id), loop)
+        fut.result(timeout=2)
 
         t.join(timeout=5)
         assert len(result_holder) == 1
@@ -397,6 +414,183 @@ class TestClaudeBridgeHooks:
         bridge = _make_claude_bridge()
         result = bridge._handle_hook("SomeUnknownHook", {})
         assert result == {}
+
+
+def test_permission_request_resolves_on_approve():
+    """approve() must resolve the pending hook and return approve decision."""
+    bridge = _make_claude_bridge()
+    # The bridge needs a running event loop for _ensure_bridge_loop()
+    # Start the bridge loop manually
+    bridge._ensure_bridge_loop()
+
+    results = []
+
+    def run_hook():
+        result = bridge._handle_hook(
+            "PermissionRequest",
+            {"tool_name": "bash", "tool_input": {"command": "ls"}},
+        )
+        results.append(result)
+
+    import threading
+    t = threading.Thread(target=run_hook)
+    t.start()
+
+    # Give the hook time to register
+    import time
+    time.sleep(0.1)
+
+    # Find the approval_id
+    approval_ids = list(bridge._pending_approvals.keys())
+    assert len(approval_ids) == 1
+
+    # Approve it via the bridge loop
+    loop = bridge._ensure_bridge_loop()
+    future = asyncio.run_coroutine_threadsafe(bridge.approve(approval_ids[0]), loop)
+    future.result(timeout=2)
+
+    t.join(timeout=2)
+    assert results == [{"decision": "approve"}]
+
+
+def test_permission_request_resolves_on_deny():
+    """deny() must resolve the pending hook and return block decision."""
+    bridge = _make_claude_bridge()
+    bridge._ensure_bridge_loop()
+
+    results = []
+
+    def run_hook():
+        result = bridge._handle_hook(
+            "PermissionRequest",
+            {"tool_name": "bash", "tool_input": {"command": "rm -rf /"}},
+        )
+        results.append(result)
+
+    import threading, time
+    t = threading.Thread(target=run_hook)
+    t.start()
+    time.sleep(0.1)
+
+    approval_ids = list(bridge._pending_approvals.keys())
+    loop = bridge._ensure_bridge_loop()
+    future = asyncio.run_coroutine_threadsafe(
+        bridge.deny(approval_ids[0], "Too dangerous"), loop
+    )
+    future.result(timeout=2)
+
+    t.join(timeout=2)
+    assert results == [{"decision": "block", "reason": "Too dangerous"}]
+
+
+def test_permission_request_does_not_block_thread():
+    """A second thread must be available while an approval is pending."""
+    import concurrent.futures
+    import time
+
+    bridge = _make_claude_bridge()
+    bridge._ensure_bridge_loop()
+
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+
+    # Submit a hook call that will block waiting for approval
+    hook_future = executor.submit(
+        bridge._handle_hook,
+        "PermissionRequest",
+        {"tool_name": "bash", "tool_input": {"command": "ls"}},
+    )
+
+    # Give the hook time to register and start waiting
+    time.sleep(0.1)
+    assert not hook_future.done(), "hook should still be waiting for approval"
+
+    # The thread pool must still be able to serve a second request
+    other_future = executor.submit(lambda: "available")
+    assert other_future.result(timeout=1) == "available", "second thread should be free"
+
+    # Clean up — deny to unblock the hook thread
+    loop = bridge._ensure_bridge_loop()
+    approval_ids = list(bridge._pending_approvals.keys())
+    if approval_ids:
+        deny_future = asyncio.run_coroutine_threadsafe(
+            bridge.deny(approval_ids[0], "test cleanup"), loop
+        )
+        deny_future.result(timeout=2)
+
+    hook_future.result(timeout=2)
+    executor.shutdown(wait=False)
+
+
+# ===========================================================================
+# Test: ClaudeBridge per-channel message queue
+# ===========================================================================
+
+def test_send_prompt_queue_processes_all_messages():
+    """All queued messages must be processed, none dropped."""
+    bridge = _make_claude_bridge()
+    processed = []
+
+    async def run():
+        async def fake_process(text, channel_id, sender):
+            processed.append(text)
+            await asyncio.sleep(0)
+
+        # Start the bridge loop so the queue worker can run
+        loop = asyncio.get_event_loop()
+        # Patch _run_claude_process to track calls
+        original = bridge._run_claude_process
+        bridge._run_claude_process = fake_process
+
+        # Start the queue worker manually (bridge.start() not called in unit tests)
+        worker_task = loop.create_task(bridge._queue_worker())
+
+        await bridge.send_prompt("msg1", "general", "alice")
+        await bridge.send_prompt("msg2", "general", "bob")
+        await bridge.send_prompt("msg3", "general", "carol")
+
+        # Wait for all items to be processed
+        await bridge._send_queue.join()
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+
+        bridge._run_claude_process = original
+
+    asyncio.run(run())
+    assert len(processed) == 3
+    assert set(processed) == {"msg1", "msg2", "msg3"}
+
+
+def test_send_prompt_processes_messages_in_order():
+    """Messages must be processed in arrival order."""
+    bridge = _make_claude_bridge()
+    order = []
+
+    async def run():
+        async def fake_process(text, channel_id, sender):
+            order.append(text)
+            await asyncio.sleep(0.01)
+
+        bridge._run_claude_process = fake_process
+
+        loop = asyncio.get_event_loop()
+        worker_task = loop.create_task(bridge._queue_worker())
+
+        await bridge.send_prompt("first", "general", "alice")
+        await bridge.send_prompt("second", "general", "bob")
+        await bridge.send_prompt("third", "general", "carol")
+
+        await bridge._send_queue.join()
+        worker_task.cancel()
+        try:
+            await worker_task
+        except asyncio.CancelledError:
+            pass
+
+    asyncio.run(run())
+    assert order == ["first", "second", "third"]
 
 
 # ===========================================================================
@@ -548,7 +742,8 @@ class TestManagerBridgeRouting:
         assert "#room-1" in startup_text
         assert startup_sender == "system"
         trigger_text = fake_bridge.sent_prompts[1][0]
-        assert "you were mentioned" in trigger_text
+        assert "human" in trigger_text
+        assert "inspect this" in trigger_text
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["send_prompt"]
         assert fake_bridge.loop_ids["start"] == fake_bridge.loop_ids["stop"]
 

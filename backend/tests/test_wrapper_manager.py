@@ -10,26 +10,42 @@ from duckdome.wrapper.manager import (
 )
 
 
-def test_build_trigger_prompt_is_minimal():
+def test_trigger_prompt_includes_sender_and_text():
     prompt = _build_trigger_prompt(
-        agent_type="codex",
-        channel="ch-123",
-        sender="human",
-        text="Please inspect the failing test and patch it.",
+        agent_type="claude",
+        channel="general",
+        sender="alice",
+        text="hey can you check the build?",
     )
-    assert "you were mentioned, take appropriate action" in prompt
-    # channel/join instructions now live in the startup prompt, not here
-    assert "chat_join" not in prompt
+    assert "alice" in prompt
+    assert "hey can you check the build?" in prompt
 
 
-def test_build_trigger_prompt_same_for_all_agents():
-    claude_prompt = _build_trigger_prompt(
-        agent_type="claude", channel="general", sender="human", text="hi"
+def test_trigger_prompt_includes_channel():
+    prompt = _build_trigger_prompt(
+        agent_type="claude",
+        channel="deployments",
+        sender="bob",
+        text="deploy failed",
     )
-    codex_prompt = _build_trigger_prompt(
-        agent_type="codex", channel="general", sender="human", text="hi"
+    assert "deployments" in prompt
+
+
+def test_trigger_prompt_is_same_for_all_agent_types():
+    """Prompt structure must not vary by agent_type — all agents get the same format."""
+    kwargs = dict(channel="general", sender="alice", text="hello")
+    assert _build_trigger_prompt(agent_type="claude", **kwargs) == _build_trigger_prompt(agent_type="codex", **kwargs)
+
+
+def test_trigger_prompt_instructs_chat_read_for_history():
+    """Claude should still be told to use chat_read for full context."""
+    prompt = _build_trigger_prompt(
+        agent_type="claude",
+        channel="general",
+        sender="alice",
+        text="any message",
     )
-    assert claude_prompt == codex_prompt
+    assert "chat_read" in prompt
 
 
 def test_build_startup_prompt_includes_channel_and_identity():

@@ -200,12 +200,16 @@ def _build_startup_prompt(*, agent_type: str, channel: str) -> str:
 
 
 def _build_trigger_prompt(*, agent_type: str, channel: str, sender: str, text: str) -> str:
-    """Build the injected task prompt when an agent is mentioned.
+    """Build the trigger prompt when an agent is mentioned.
 
-    The agent already knows its channel and identity from the startup prompt,
-    so this just needs to wake it up.
+    Includes the sender and message text so Claude has immediate context
+    without requiring a chat_read call just to know what was asked.
+    Claude should still call chat_read for full channel history when needed.
     """
-    return "you were mentioned, take appropriate action"
+    return (
+        f"{sender} says in #{channel}: {text!r}\n"
+        f"Use chat_read to get full channel history if needed, then reply with chat_send."
+    )
 
 
 def _open_agent_terminal(tmux_session: str) -> None:
@@ -351,6 +355,7 @@ class AgentProcess:
     presence_channel: str | None = None
     console_monitor: ConsoleMonitor | None = None
     key: str = ""  # compound key: "agent_type:channel_id"
+    duckdome_token: str = ""
 
 
 class AgentProcessManager:
@@ -803,6 +808,8 @@ class AgentProcessManager:
         # discovery flow, which would otherwise block startup with an
         # interactive auth prompt for a headless background process.
         token = generate_agent_token()
+        bound_channel = channel_id or "general"
+        agent_auth_store.register(token, channel=bound_channel, agent_type=agent_type)
         if agent_type == "gemini":
             mcp_config_path = generate_gemini_settings(
                 self._config_dir, agent_type, mcp_target_url, token
@@ -838,6 +845,7 @@ class AgentProcessManager:
             inject_delay=_resolve_inject_delay(agent_type),
             active_channel=channel_id or "general",
             key=self._agent_key(agent_type, channel_id),
+            duckdome_token=token,
         )
 
         def _run_one_popen_iteration() -> bool:
@@ -1033,6 +1041,8 @@ class AgentProcessManager:
                 agent_proc.proxy.stop()
             except Exception:
                 logger.exception("[%s] proxy shutdown error", agent_type)
+        if agent_proc.duckdome_token:
+            agent_auth_store.unregister(agent_proc.duckdome_token)
         self._deregister_agent_presence(agent_proc)
         return True
 
@@ -1114,14 +1124,8 @@ class AgentProcessManager:
             prompt = _build_trigger_prompt(
                 agent_type=agent_type, channel=channel, sender=sender, text=text,
             )
-            try:
-                self._run_bridge_coro(
-                    bridge.send_prompt(prompt, channel, sender),
-                    timeout=120,  # send_prompt waits up to 30s for ready + keystroke injection
-                )
-            except (TimeoutError, RuntimeError) as exc:
-                logger.error("[%s] send_prompt failed: %s", key, exc)
-                return False
+            # send_prompt enqueues; the queue worker runs to completion in the bridge loop.
+            self._submit_bridge_coro(bridge.send_prompt(prompt, channel, sender))
             return True
 
         if self._use_bridge(agent_type):
