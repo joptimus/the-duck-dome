@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import json
 import os
 import threading
 from pathlib import Path
 
 from duckdome.models.trigger import Trigger, TriggerStatus
+from duckdome.stores.base import iter_jsonl_models
 
 
 class TriggerStore:
@@ -22,16 +22,11 @@ class TriggerStore:
     def _load(self) -> None:
         if not self._file.exists():
             return
-        with open(self._file, "r", encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                t = Trigger(**json.loads(line))
-                self._triggers[t.id] = t
-                if t.id not in self._order:
-                    self._order.append(t.id)
-                self._dedupe_index[t.dedupe_key] = t.id
+        for t in iter_jsonl_models(self._file, Trigger):
+            self._triggers[t.id] = t
+            if t.id not in self._order:
+                self._order.append(t.id)
+            self._dedupe_index[t.dedupe_key] = t.id
 
     def _save(self) -> None:
         tmp = self._file.with_suffix(".tmp")
