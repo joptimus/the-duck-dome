@@ -10,6 +10,7 @@ from duckdome.models.tool_approval import (
     ToolApprovalStatus,
     ToolPolicyDecision,
 )
+from duckdome.stores.base import iter_jsonl_models
 
 
 class ToolApprovalStore:
@@ -29,15 +30,10 @@ class ToolApprovalStore:
     def _load(self) -> None:
         with self._lock:
             if self._approvals_file.exists():
-                with open(self._approvals_file, "r", encoding="utf-8") as f:
-                    for line in f:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        approval = ToolApproval(**json.loads(line))
-                        self._approvals[approval.id] = approval
-                        if approval.id not in self._order:
-                            self._order.append(approval.id)
+                for approval in iter_jsonl_models(self._approvals_file, ToolApproval):
+                    self._approvals[approval.id] = approval
+                    if approval.id not in self._order:
+                        self._order.append(approval.id)
 
             if self._policy_file.exists():
                 try:

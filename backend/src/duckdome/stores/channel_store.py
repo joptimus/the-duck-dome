@@ -1,12 +1,11 @@
 from __future__ import annotations
 
-import json
 import os
 import threading
 from pathlib import Path
 
 from duckdome.models.channel import AgentInstance, Channel
-from duckdome.stores.base import BaseChannelStore
+from duckdome.stores.base import BaseChannelStore, iter_jsonl_models
 
 
 class ChannelStore(BaseChannelStore):
@@ -23,23 +22,13 @@ class ChannelStore(BaseChannelStore):
 
     def _load(self) -> None:
         if self._channels_file.exists():
-            with open(self._channels_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    ch = Channel(**json.loads(line))
-                    self._channels[ch.id] = ch
-                    if ch.id not in self._channel_order:
-                        self._channel_order.append(ch.id)
+            for ch in iter_jsonl_models(self._channels_file, Channel):
+                self._channels[ch.id] = ch
+                if ch.id not in self._channel_order:
+                    self._channel_order.append(ch.id)
         if self._agents_file.exists():
-            with open(self._agents_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    agent = AgentInstance(**json.loads(line))
-                    self._agents[agent.id] = agent
+            for agent in iter_jsonl_models(self._agents_file, AgentInstance):
+                self._agents[agent.id] = agent
 
     def _save_channels(self) -> None:
         with self._lock:
