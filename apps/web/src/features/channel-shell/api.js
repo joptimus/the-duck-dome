@@ -1,5 +1,3 @@
-import { mockAgentsByChannelId, mockChannels, mockTriggersByChannelId } from "./mockData";
-
 const API_BASE = (import.meta.env.VITE_API_BASE ?? "http://localhost:8000").replace(/\/$/, "");
 
 async function request(path, options) {
@@ -29,32 +27,15 @@ async function request(path, options) {
 }
 
 export async function getChannels() {
-  try {
-    return await request("/api/channels");
-  } catch (error) {
-    if (!error?.isNetworkError) throw error;
-    return mockChannels;
-  }
+  return request("/api/channels");
 }
 
 export async function createChannel(payload) {
-  try {
-    return await request("/api/channels", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } catch (error) {
-    if (!error?.isNetworkError) throw error;
-    const id = `local-${Date.now()}`;
-    return {
-      id,
-      name: payload.name,
-      type: payload.type,
-      repo_path: payload.repo_path || null,
-      unread_count: 0,
-    };
-  }
+  return request("/api/channels", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
 }
 
 export async function deleteChannel(channelId) {
@@ -64,40 +45,19 @@ export async function deleteChannel(channelId) {
 }
 
 export async function getChannel(channelId) {
-  try {
-    return await request(`/api/channels/${encodeURIComponent(channelId)}`);
-  } catch (error) {
-    if (!error?.isNetworkError) throw error;
-    return mockChannels.find((channel) => channel.id === channelId) || null;
-  }
+  return request(`/api/channels/${encodeURIComponent(channelId)}`);
 }
 
 export async function getChannelAgents(channelId) {
-  try {
-    return await request(`/api/channels/${encodeURIComponent(channelId)}/agents`);
-  } catch (error) {
-    if (!error?.isNetworkError) throw error;
-    return mockAgentsByChannelId[channelId] || [];
-  }
+  return request(`/api/channels/${encodeURIComponent(channelId)}/agents`);
 }
 
 export async function addChannelAgent(channelId, agentType) {
-  try {
-    return await request(`/api/channels/${encodeURIComponent(channelId)}/agents`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ agent_type: agentType }),
-    });
-  } catch (error) {
-    if (!error?.isNetworkError) throw error;
-    return {
-      id: `${channelId}:${agentType}`,
-      channel_id: channelId,
-      agent_type: agentType,
-      status: "idle",
-      last_heartbeat: null,
-    };
-  }
+  return request(`/api/channels/${encodeURIComponent(channelId)}/agents`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ agent_type: agentType }),
+  });
 }
 
 export async function removeChannelAgent(channelId, agentType) {
@@ -107,63 +67,34 @@ export async function removeChannelAgent(channelId, agentType) {
 }
 
 export async function registerRuntimeAgent(channelId, agentType) {
-  try {
-    return await request("/api/agents/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        channel_id: channelId,
-        agent_type: agentType,
-      }),
-    });
-  } catch (error) {
-    if (!error?.isNetworkError && !(error?.status >= 500)) throw error;
-    return {
-      id: `${channelId}:${agentType}`,
+  return request("/api/agents/register", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
       channel_id: channelId,
       agent_type: agentType,
-      status: "idle",
-      __localFallback: true,
-    };
-  }
+    }),
+  });
 }
 
 export async function deregisterRuntimeAgent(channelId, agentType) {
-  try {
-    return await request("/api/agents/deregister", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        channel_id: channelId,
-        agent_type: agentType,
-      }),
-    });
-  } catch (error) {
-    if (!error?.isNetworkError && !(error?.status >= 500)) throw error;
-    return {
-      id: `${channelId}:${agentType}`,
+  return request("/api/agents/deregister", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
       channel_id: channelId,
       agent_type: agentType,
-      status: "offline",
-      __localFallback: true,
-    };
-  }
+    }),
+  });
 }
 
 export async function getChannelTriggers(channelId) {
   try {
     return await request(`/api/channels/${encodeURIComponent(channelId)}/triggers`);
   } catch (error) {
-    if (error?.isNetworkError) return mockTriggersByChannelId[channelId] || [];
     if (error?.status !== 404) throw error;
   }
-
-  try {
-    return await request(`/api/triggers?channel_id=${encodeURIComponent(channelId)}`);
-  } catch (error) {
-    if (!error?.isNetworkError) throw error;
-    return mockTriggersByChannelId[channelId] || [];
-  }
+  return request(`/api/triggers?channel_id=${encodeURIComponent(channelId)}`);
 }
 
 export async function getChannelMessages(channelId) {
@@ -267,21 +198,14 @@ export async function removeRepoSource(path) {
   });
 }
 
-export async function updateAgentPermissions(agentKey, permissions, fallbackPermissions = permissions) {
-  try {
-    const result = await request(`/api/agents/${encodeURIComponent(agentKey)}/permissions`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        agent: agentKey,
-        permissions,
-      }),
-    });
-    return result?.permissions ?? result ?? permissions;
-  } catch (error) {
-    if (error?.isNetworkError || error?.status === 404 || error?.status >= 500) {
-      return fallbackPermissions;
-    }
-    throw error;
-  }
+export async function updateAgentPermissions(agentKey, permissions) {
+  const result = await request(`/api/agents/${encodeURIComponent(agentKey)}/permissions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      agent: agentKey,
+      permissions,
+    }),
+  });
+  return result?.permissions ?? result ?? permissions;
 }

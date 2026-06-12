@@ -60,7 +60,6 @@ async function updatePermissions(
     const confirmed = await updateAgentPermissions(
       agentKey,
       buildPermissionsPayload(nextPermissions),
-      nextPermissions,
     );
     if (getAdapter() !== adapterAtCall) {
       return;
