@@ -25,7 +25,6 @@ import {
   bootChannel,
 } from "./api";
 import { createWsClient } from "../../api/ws";
-import { mockMessagesByChannelId } from "./mockData";
 import { AppShell } from "../../components/layout/AppShell";
 import { Sidebar } from "../../components/sidebar/Sidebar";
 import { TopBar } from "../../components/topbar/TopBar";
@@ -398,7 +397,7 @@ export default function ChannelShell() {
   const [agentError, setAgentError] = useState(null);
   const [triggerError, setTriggerError] = useState(null);
   const [messagesError, setMessagesError] = useState(null);
-  const [messagesByChannelId, setMessagesByChannelId] = useState(mockMessagesByChannelId);
+  const [messagesByChannelId, setMessagesByChannelId] = useState({});
   const [jobsByChannelId, setJobsByChannelId] = useState({});
   const [replyingTo, setReplyingTo] = useState(null);
   const [pinnedByChannelId, setPinnedByChannelId] = useState(() => loadPinnedMessages());
@@ -466,11 +465,17 @@ export default function ChannelShell() {
     let ignore = false;
 
     async function loadChannels() {
-      const result = normalizeChannels(await getChannels());
-      if (ignore) return;
-      setChannels(result);
-      if (result.length > 0) {
-        setActiveChannelId(result[0].id);
+      try {
+        const result = normalizeChannels(await getChannels());
+        if (ignore) return;
+        setChannels(result);
+        if (result.length > 0) {
+          setActiveChannelId(result[0].id);
+        }
+      } catch (error) {
+        if (ignore) return;
+        console.error("Failed to load channels:", error);
+        setChannelError("Could not reach backend — channel list unavailable");
       }
     }
 
@@ -959,20 +964,10 @@ export default function ChannelShell() {
         || activeChannelId;
 
       try {
-        const runtimeResult = agent.running
-          ? await deregisterRuntimeAgent(resolvedChannelId, agent.agent)
-          : await registerRuntimeAgent(resolvedChannelId, agent.agent);
-
-        if (runtimeResult?.__localFallback) {
-          setAgents((prev) =>
-            prev.map((item) =>
-              item.agent_type === agent.agent
-                ? { ...item, status: runtimeResult.status === "idle" ? "idle" : "offline" }
-                : item,
-            ),
-          );
-          setAgentError(null);
-          return;
+        if (agent.running) {
+          await deregisterRuntimeAgent(resolvedChannelId, agent.agent);
+        } else {
+          await registerRuntimeAgent(resolvedChannelId, agent.agent);
         }
 
         const refreshed = await getChannelAgents(resolvedChannelId);
@@ -1194,6 +1189,11 @@ export default function ChannelShell() {
           onTogglePanel={togglePanel}
         />
 
+        {!wsConnected && (
+          <div style={{ padding: "4px 16px", color: "var(--warning)", fontSize: "var(--fs-label, 11px)" }}>
+            Backend disconnected — reconnecting…
+          </div>
+        )}
         {channelError && (
           <div style={{ padding: "4px 16px", color: "var(--warning)", fontSize: "var(--fs-label, 11px)" }}>
             {channelError}
