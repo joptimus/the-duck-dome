@@ -438,10 +438,18 @@ class AgentProcessManager:
             )
             # If policy auto-resolved, respond immediately
             if result.status == "approved":
-                self._submit_bridge_coro(bridge.approve(event.approval_id))
+                self._submit_bridge_coro(
+                    bridge.approve(event.approval_id),
+                    description="deliver tool approval",
+                    agent_type=event.agent_type,
+                    channel=event.channel_id,
+                )
             elif result.status == "denied":
                 self._submit_bridge_coro(
-                    bridge.deny(event.approval_id, "Denied by policy")
+                    bridge.deny(event.approval_id, "Denied by policy"),
+                    description="deliver tool denial",
+                    agent_type=event.agent_type,
+                    channel=event.channel_id,
                 )
             elif result.approval is not None:
                 self._tool_approval_service.register_runtime_resolver(
@@ -452,7 +460,10 @@ class AgentProcessManager:
                         else bridge.deny(
                             event.approval_id,
                             reason or "Denied by user",
-                        )
+                        ),
+                        description="deliver tool approval decision",
+                        agent_type=event.agent_type,
+                        channel=event.channel_id,
                     ),
                 )
             # If "pending", the UI will call approve/deny via the tool approval route
@@ -659,11 +670,73 @@ class AgentProcessManager:
             raise RuntimeError("Bridge event loop unavailable")
         return self._bridge_loop
 
-    def _submit_bridge_coro(self, coro: Coroutine[Any, Any, Any]) -> object:
+    def _submit_bridge_coro(
+        self,
+        coro: Coroutine[Any, Any, Any],
+        *,
+        description: str = "",
+        agent_type: str = "",
+        channel: str = "",
+    ) -> object:
+        """Submit a coroutine to the bridge loop.
+
+        When *description* is given the call is fire-and-forget and any
+        exception is surfaced: logged, posted to the channel as a system
+        error message, and broadcast as an agent_error WS event. Callers
+        that wait on the returned future themselves should omit it.
+        """
         loop = self._ensure_bridge_loop()
         if self._bridge_loop_thread_id == threading.get_ident():
-            return loop.create_task(coro)
-        return asyncio.run_coroutine_threadsafe(coro, loop)
+            future: object = loop.create_task(coro)
+        else:
+            future = asyncio.run_coroutine_threadsafe(coro, loop)
+        if description:
+            future.add_done_callback(  # type: ignore[attr-defined]
+                lambda fut: self._report_bridge_failure(
+                    fut, description=description, agent_type=agent_type, channel=channel
+                )
+            )
+        return future
+
+    def _report_bridge_failure(
+        self, future: Any, *, description: str, agent_type: str, channel: str
+    ) -> None:
+        try:
+            exc = future.exception()
+        except asyncio.CancelledError:
+            return
+        if exc is None:
+            return
+        logger.error(
+            "[%s] %s failed (channel=%s): %s",
+            agent_type or "bridge",
+            description,
+            channel,
+            exc,
+            exc_info=exc,
+        )
+        if self._message_service is not None and channel:
+            try:
+                self._message_service.post_system_event(
+                    channel=channel,
+                    subtype="error",
+                    agent=agent_type or None,
+                    text=f"{agent_type or 'agent'}: {description} failed: {exc}",
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to post bridge failure to channel %s", channel
+                )
+        if self._ws_manager is not None:
+            self._ws_manager.broadcast_sync({
+                "type": "agent_error",
+                "agent_id": f"{channel}:{agent_type}" if channel else agent_type,
+                "agent_type": agent_type,
+                "channel_id": channel,
+                "error": f"{description} failed: {exc}",
+                "details": None,
+                "timestamp": time.time(),
+            })
 
     def _run_bridge_coro(
         self,
@@ -736,7 +809,12 @@ class AgentProcessManager:
         # Send startup prompt — fires once the bridge is ready (ClaudeBridge waits
         # for SessionStart; CodexBridge is ready immediately after start())
         startup = _build_startup_prompt(agent_type=agent_type, channel=bound_channel)
-        self._submit_bridge_coro(bridge.send_prompt(startup, bound_channel, "system"))
+        self._submit_bridge_coro(
+            bridge.send_prompt(startup, bound_channel, "system"),
+            description="send startup prompt",
+            agent_type=agent_type,
+            channel=bound_channel,
+        )
 
         logger.info("[%s] started via bridge", key)
         return True
@@ -1125,7 +1203,12 @@ class AgentProcessManager:
                 agent_type=agent_type, channel=channel, sender=sender, text=text,
             )
             # send_prompt enqueues; the queue worker runs to completion in the bridge loop.
-            self._submit_bridge_coro(bridge.send_prompt(prompt, channel, sender))
+            self._submit_bridge_coro(
+                bridge.send_prompt(prompt, channel, sender),
+                description=f"deliver message from {sender}",
+                agent_type=agent_type,
+                channel=channel,
+            )
             return True
 
         if self._use_bridge(agent_type):
